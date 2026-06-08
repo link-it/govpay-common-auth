@@ -1,0 +1,29 @@
+2026-06-08  Giuliano Pintori <giuliano.pintori@link.it>
+
+	* [Build]
+	Importata la pipeline di validazione e rilascio CI/CD dal progetto
+	govpay-ec-client. Aggiunti i workflow GitHub Actions maven.yml
+	(build/test, OWASP Dependency-Check con cache, SonarCloud, OSV scan,
+	SBOM CycloneDX, deploy SNAPSHOT su push main, GitHub Release e deploy
+	RELEASE su Maven Central sui tag X.Y.Z) e refresh-owasp-db.yml
+	(aggiornamento schedulato del DB NVD). Inclusi lo script
+	analyze_licenses.py con license-exceptions.json per l'analisi di
+	compatibilita' delle licenze e la documentazione PIPELINE.md.
+	Adattati a govpay-common-auth i riferimenti specifici del progetto
+	(projectKey SonarCloud link-it_govpay-common-auth, nome artifact,
+	pattern del JAR, asset di release).
+
+	* [Build]
+	Aggiunto pom.xml derivato da govpay-ec-client con parent govpay-bom
+	2.0.0-SNAPSHOT. Mantenuta l'infrastruttura di build richiesta dalla
+	pipeline (JaCoCo, OWASP Dependency-Check, maven-source-plugin,
+	maven-javadoc-plugin, profilo release con doclint override, properties
+	OSS Index / autoUpdate NVD). Rimosse le parti specifiche del client
+	(openapi-generator-maven-plugin, build-helper-maven-plugin per i
+	sorgenti generati, override Netty nel dependencyManagement). Allineato
+	il .gitignore (cache OWASP, .settings/, IDE, file compilati).
+
+	* [ProjectSetup]
+	Creazione repository iniziale per il progetto govpay-common-auth.
+	Libreria di autorizzazione GovPay. Adottato govpay-bom come parent POM
+	e Java 21.
