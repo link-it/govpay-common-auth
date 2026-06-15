@@ -1,1 +1,2 @@
 it.govpay.common.auth.GovpayAuthAutoConfiguration
+it.govpay.common.auth.GovpaySecurityFilterChainAutoConfiguration
