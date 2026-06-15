@@ -45,7 +45,7 @@ public class AuthTypeStampingFilter extends OncePerRequestFilter {
                                     HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (isAuthenticated(auth)) {
+        if (isAuthenticated(auth) && !(request.getAttribute(REQUEST_ATTRIBUTE) instanceof AuthType)) {
             AuthType type = detect(request);
             if (type != null) {
                 request.setAttribute(REQUEST_ATTRIBUTE, type);
@@ -61,13 +61,19 @@ public class AuthTypeStampingFilter extends OncePerRequestFilter {
     }
 
     /**
-     * Riconosce il metodo di autenticazione applicato dalla request.
-     * Estendere qui quando si aggiunge un nuovo filter (BEARER, X-API-Key, ...).
+     * Riconosce il metodo di autenticazione applicato dalla request. Ordine:
+     * preset esplicito (i filter custom come {@code JsonUsernamePasswordAuthenticationFilter}
+     * settano {@link #REQUEST_ATTRIBUTE} direttamente dopo authentication) &gt;
+     * header {@code Authorization: Basic} &gt; cookie sessione valido (FORM).
+     * Estendere qui per Bearer, X-API-Key, ecc.
      */
     private static AuthType detect(HttpServletRequest request) {
         String authorization = request.getHeader("Authorization");
         if (authorization != null && authorization.regionMatches(true, 0, BASIC_PREFIX, 0, BASIC_PREFIX.length())) {
             return AuthType.BASIC;
+        }
+        if (request.getRequestedSessionId() != null && request.isRequestedSessionIdValid()) {
+            return AuthType.FORM;
         }
         return null;
     }

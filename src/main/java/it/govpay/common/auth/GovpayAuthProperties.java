@@ -17,7 +17,7 @@ public class GovpayAuthProperties {
 
     private final Password password = new Password();
     private final Method basic = new Method();
-    private final Method form = new Method();
+    private final Form form = new Form();
     private final Method ssl = new Method();
     private final Method sslHeader = new Method();
     private final Method header = new Method();
@@ -35,7 +35,7 @@ public class GovpayAuthProperties {
         return basic;
     }
 
-    public Method getForm() {
+    public Form getForm() {
         return form;
     }
 
@@ -90,6 +90,102 @@ public class GovpayAuthProperties {
 
         public void setEnabled(boolean enabled) {
             this.enabled = enabled;
+        }
+    }
+
+    /**
+     * Configurazione del metodo FORM (login JSON + sessione + CSRF cookie +
+     * rate limit). Estende {@link Method} aggiungendo le path-property di
+     * login/logout e il rate limiter sui tentativi falliti.
+     */
+    public static class Form extends Method {
+
+        /**
+         * URL del filter custom {@code JsonUsernamePasswordAuthenticationFilter}.
+         * Spring Security mappa la POST su questo path per gestire il login.
+         */
+        private String loginPath = "/auth/login";
+
+        /**
+         * URL del {@code LogoutFilter} di Spring Security.
+         */
+        private String logoutPath = "/auth/logout";
+
+        /**
+         * Nome del cookie che porta il CSRF token verso il browser
+         * (allineato Angular: {@code XSRF-TOKEN}).
+         */
+        private String csrfCookieName = "XSRF-TOKEN";
+
+        /**
+         * Nome dell'header con cui il browser rispedisce il CSRF token.
+         */
+        private String csrfHeaderName = "X-XSRF-TOKEN";
+
+        private final RateLimit rateLimit = new RateLimit();
+
+        public String getLoginPath() {
+            return loginPath;
+        }
+
+        public void setLoginPath(String loginPath) {
+            this.loginPath = loginPath;
+        }
+
+        public String getLogoutPath() {
+            return logoutPath;
+        }
+
+        public void setLogoutPath(String logoutPath) {
+            this.logoutPath = logoutPath;
+        }
+
+        public String getCsrfCookieName() {
+            return csrfCookieName;
+        }
+
+        public void setCsrfCookieName(String csrfCookieName) {
+            this.csrfCookieName = csrfCookieName;
+        }
+
+        public String getCsrfHeaderName() {
+            return csrfHeaderName;
+        }
+
+        public void setCsrfHeaderName(String csrfHeaderName) {
+            this.csrfHeaderName = csrfHeaderName;
+        }
+
+        public RateLimit getRateLimit() {
+            return rateLimit;
+        }
+    }
+
+    /**
+     * Configurazione del rate-limiter per i tentativi falliti di login.
+     */
+    public static class RateLimit {
+
+        /** Numero massimo di tentativi falliti per IP nella finestra. */
+        private int attempts = 5;
+
+        /** Durata della finestra sliding (in minuti) per il conteggio. */
+        private int windowMinutes = 15;
+
+        public int getAttempts() {
+            return attempts;
+        }
+
+        public void setAttempts(int attempts) {
+            this.attempts = attempts;
+        }
+
+        public int getWindowMinutes() {
+            return windowMinutes;
+        }
+
+        public void setWindowMinutes(int windowMinutes) {
+            this.windowMinutes = windowMinutes;
         }
     }
 

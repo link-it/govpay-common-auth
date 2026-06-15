@@ -18,6 +18,7 @@ import tools.jackson.databind.json.JsonMapper;
 
 import it.govpay.common.auth.spi.AuthenticatedSubject;
 import it.govpay.common.auth.spi.GovpayPrincipalLoader;
+import it.govpay.common.auth.spi.JsonLoginResponseWriter;
 
 class GovpaySecurityFilterChainAutoConfigurationTest {
 
@@ -35,6 +36,7 @@ class GovpaySecurityFilterChainAutoConfigurationTest {
                 .run(context -> {
                     assertThat(context).hasSingleBean(SecurityFilterChain.class);
                     assertThat(context).hasSingleBean(AuthTypeStampingFilter.class);
+                    assertThat(context).doesNotHaveBean(JsonUsernamePasswordAuthenticationFilter.class);
                 });
     }
 
@@ -48,11 +50,37 @@ class GovpaySecurityFilterChainAutoConfigurationTest {
     }
 
     @Test
-    void chainNotRegisteredWhenBasicDisabled() {
+    void chainAndFormFilterRegisteredWhenFormEnabled() {
         runner.withUserConfiguration(LoaderConfig.class)
+                .withPropertyValues("govpay.auth.form.enabled=true")
                 .run(context -> {
-                    assertThat(context).doesNotHaveBean(SecurityFilterChain.class);
-                    assertThat(context).doesNotHaveBean(AuthTypeStampingFilter.class);
+                    assertThat(context).hasSingleBean(SecurityFilterChain.class);
+                    assertThat(context).hasSingleBean(JsonUsernamePasswordAuthenticationFilter.class);
+                    assertThat(context).hasSingleBean(LoginRateLimiter.class);
+                    assertThat(context).hasSingleBean(JsonLoginResponseWriter.class);
+                });
+    }
+
+    @Test
+    void basicAndFormCanCoexist() {
+        runner.withUserConfiguration(LoaderConfig.class)
+                .withPropertyValues(
+                        "govpay.auth.basic.enabled=true",
+                        "govpay.auth.form.enabled=true")
+                .run(context -> {
+                    assertThat(context).hasSingleBean(SecurityFilterChain.class);
+                    assertThat(context).hasSingleBean(JsonUsernamePasswordAuthenticationFilter.class);
+                });
+    }
+
+    @Test
+    void formBeansAbsentWhenFormDisabled() {
+        runner.withUserConfiguration(LoaderConfig.class)
+                .withPropertyValues("govpay.auth.basic.enabled=true")
+                .run(context -> {
+                    assertThat(context).doesNotHaveBean(JsonUsernamePasswordAuthenticationFilter.class);
+                    assertThat(context).doesNotHaveBean(LoginRateLimiter.class);
+                    assertThat(context).doesNotHaveBean(JsonLoginResponseWriter.class);
                 });
     }
 
