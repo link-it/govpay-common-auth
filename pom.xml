@@ -49,11 +49,35 @@
     </properties>
 
     <dependencies>
-        <!-- NB: dipendenze di base / placeholder. Aggiungere qui le dipendenze
-             effettive della libreria di autorizzazione (es. spring-security). -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter</artifactId>
+        </dependency>
+
+        <!-- Spring Security: provider, filter chain, web entry point/handler -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+
+        <!-- Jackson 3 (problem+json serialization). I consumer hanno gia' un ObjectMapper. -->
+        <dependency>
+            <groupId>tools.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+
+        <!-- SHA-512/MD5 Unix crypt per GovpayPasswordEncoder (allineato V1) -->
+        <dependency>
+            <groupId>commons-codec</groupId>
+            <artifactId>commons-codec</artifactId>
+        </dependency>
+
+        <!-- Servlet API: HttpServletRequest/Response usati dalla SPI e dagli
+             entry point. provided: il consumer porta il container. -->
+        <dependency>
+            <groupId>jakarta.servlet</groupId>
+            <artifactId>jakarta.servlet-api</artifactId>
+            <scope>provided</scope>
         </dependency>
 
         <dependency>
