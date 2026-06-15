@@ -18,10 +18,10 @@ public class GovpayAuthProperties {
     private final Password password = new Password();
     private final Method basic = new Method();
     private final Form form = new Form();
-    private final Method ssl = new Method();
-    private final Method sslHeader = new Method();
-    private final Method header = new Method();
-    private final Method apiKey = new Method();
+    private final Ssl ssl = new Ssl();
+    private final SslHeader sslHeader = new SslHeader();
+    private final Header header = new Header();
+    private final ApiKey apiKey = new ApiKey();
     private final Method spid = new Method();
     private final Method session = new Method();
     private final Method oauth2 = new Method();
@@ -39,19 +39,19 @@ public class GovpayAuthProperties {
         return form;
     }
 
-    public Method getSsl() {
+    public Ssl getSsl() {
         return ssl;
     }
 
-    public Method getSslHeader() {
+    public SslHeader getSslHeader() {
         return sslHeader;
     }
 
-    public Method getHeader() {
+    public Header getHeader() {
         return header;
     }
 
-    public Method getApiKey() {
+    public ApiKey getApiKey() {
         return apiKey;
     }
 
@@ -158,6 +158,97 @@ public class GovpayAuthProperties {
 
         public RateLimit getRateLimit() {
             return rateLimit;
+        }
+    }
+
+    /**
+     * Configurazione del metodo SSL (autenticazione mutua TLS con cert client).
+     * Spring Security usa {@code X509AuthenticationFilter}.
+     */
+    public static class Ssl extends Method {
+
+        /**
+         * Regex applicata al subject del certificato per estrarne il principal.
+         * Default V1: l'intero subject DN come principal.
+         */
+        private String subjectPrincipalRegex = "^(.*)$";
+
+        public String getSubjectPrincipalRegex() {
+            return subjectPrincipalRegex;
+        }
+
+        public void setSubjectPrincipalRegex(String subjectPrincipalRegex) {
+            this.subjectPrincipalRegex = subjectPrincipalRegex;
+        }
+    }
+
+    /**
+     * Configurazione del metodo HEADER (principal in header HTTP, tipico di
+     * reverse proxy che ha gia' autenticato l'utente a monte).
+     */
+    public static class Header extends Method {
+
+        /** Nome dell'header che porta il principal. */
+        private String principalHeaderName = "X-Pre-Auth-User";
+
+        public String getPrincipalHeaderName() {
+            return principalHeaderName;
+        }
+
+        public void setPrincipalHeaderName(String principalHeaderName) {
+            this.principalHeaderName = principalHeaderName;
+        }
+    }
+
+    /**
+     * Configurazione del metodo SSL_HEADER (certificato client SSL inoltrato
+     * via header da reverse proxy / API gateway).
+     *
+     * <p>Versione semplificata rispetto a V1: si assume che l'header porti gia'
+     * il subject DN pronto. Encoding base64/URL e replace caratteri sono
+     * fuori scope; gateway che ne abbiano bisogno possono pre-decodificare
+     * a monte oppure registrare un decoder custom.
+     */
+    public static class SslHeader extends Method {
+
+        /** Nome dell'header che porta il subject DN del certificato. */
+        private String principalHeaderName = "X-SSL-Client-S-Dn";
+
+        public String getPrincipalHeaderName() {
+            return principalHeaderName;
+        }
+
+        public void setPrincipalHeaderName(String principalHeaderName) {
+            this.principalHeaderName = principalHeaderName;
+        }
+    }
+
+    /**
+     * Configurazione del metodo API_KEY (coppia id/key in header HTTP,
+     * gestita come Basic-like flow internamente).
+     */
+    public static class ApiKey extends Method {
+
+        /** Nome dell'header che porta l'ID applicazione. */
+        private String idHeaderName = "X-Govpay-API-ID";
+
+        /** Nome dell'header che porta la chiave applicazione. */
+        private String keyHeaderName = "X-Govpay-API-Key";
+
+        public String getIdHeaderName() {
+            return idHeaderName;
+        }
+
+        public void setIdHeaderName(String idHeaderName) {
+            this.idHeaderName = idHeaderName;
+        }
+
+        public String getKeyHeaderName() {
+            return keyHeaderName;
+        }
+
+        public void setKeyHeaderName(String keyHeaderName) {
+            this.keyHeaderName = keyHeaderName;
         }
     }
 

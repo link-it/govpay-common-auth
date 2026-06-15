@@ -1,6 +1,8 @@
 package it.govpay.common.auth;
 
 import java.io.IOException;
+import java.security.cert.X509Certificate;
+import java.util.Objects;
 
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -24,21 +26,33 @@ import jakarta.servlet.http.HttpServletResponse;
  * <p>Replica concettualmente il pattern V1 in cui ciascuna chain valorizzava
  * {@code utenza.autenticazione} con il proprio {@code authType}: qui la
  * "stampatura" e' centralizzata in un unico filter che riconosce il cue della
- * request (header {@code Authorization}, cookie sessione, certificato cert).
+ * request (header {@code Authorization}, cookie sessione, certificato cert,
+ * header pre-auth).
  *
- * <p>In questo step e' implementato il riconoscimento di {@link AuthType#BASIC};
- * gli altri metodi sono aggiunti negli step successivi.
+ * <p>Ordine di riconoscimento: preset esplicito da un filter custom (ha
+ * sempre la precedenza) &gt; {@code Authorization: Basic} &gt; certificato
+ * X.509 client &gt; coppia header API_KEY &gt; header pre-auth HEADER &gt;
+ * header pre-auth SSL_HEADER &gt; cookie sessione valido (FORM).
  */
 public class AuthTypeStampingFilter extends OncePerRequestFilter {
 
     /**
      * Nome dell'attributo della request che porta il {@link AuthType} riconosciuto.
-     * Pubblico per consentire ai consumer di accedervi direttamente quando
-     * {@link AuthTypeAccessor} non e' praticabile.
      */
     public static final String REQUEST_ATTRIBUTE = "it.govpay.common.auth.authType";
 
     private static final String BASIC_PREFIX = "Basic ";
+    private static final String X509_REQUEST_ATTRIBUTE = "jakarta.servlet.request.X509Certificate";
+
+    private final GovpayAuthProperties properties;
+
+    public AuthTypeStampingFilter() {
+        this(new GovpayAuthProperties());
+    }
+
+    public AuthTypeStampingFilter(GovpayAuthProperties properties) {
+        this.properties = Objects.requireNonNull(properties, "properties");
+    }
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
@@ -60,18 +74,33 @@ public class AuthTypeStampingFilter extends OncePerRequestFilter {
                 && !(auth instanceof AnonymousAuthenticationToken);
     }
 
-    /**
-     * Riconosce il metodo di autenticazione applicato dalla request. Ordine:
-     * preset esplicito (i filter custom come {@code JsonUsernamePasswordAuthenticationFilter}
-     * settano {@link #REQUEST_ATTRIBUTE} direttamente dopo authentication) &gt;
-     * header {@code Authorization: Basic} &gt; cookie sessione valido (FORM).
-     * Estendere qui per Bearer, X-API-Key, ecc.
-     */
-    private static AuthType detect(HttpServletRequest request) {
+    private AuthType detect(HttpServletRequest request) {
+        // BASIC: Authorization header
         String authorization = request.getHeader("Authorization");
         if (authorization != null && authorization.regionMatches(true, 0, BASIC_PREFIX, 0, BASIC_PREFIX.length())) {
             return AuthType.BASIC;
         }
+        // SSL: X.509 cert presentato a livello TLS
+        if (request.getAttribute(X509_REQUEST_ATTRIBUTE) instanceof X509Certificate[]) {
+            return AuthType.SSL;
+        }
+        // API_KEY: coppia header configurati
+        if (properties.getApiKey().isEnabled()
+                && request.getHeader(properties.getApiKey().getIdHeaderName()) != null
+                && request.getHeader(properties.getApiKey().getKeyHeaderName()) != null) {
+            return AuthType.API_KEY;
+        }
+        // HEADER: principal in header configurato
+        if (properties.getHeader().isEnabled()
+                && request.getHeader(properties.getHeader().getPrincipalHeaderName()) != null) {
+            return AuthType.HEADER;
+        }
+        // SSL_HEADER: cert subject in header configurato (proxy-terminated TLS)
+        if (properties.getSslHeader().isEnabled()
+                && request.getHeader(properties.getSslHeader().getPrincipalHeaderName()) != null) {
+            return AuthType.SSL_HEADER;
+        }
+        // FORM: cookie sessione valido
         if (request.getRequestedSessionId() != null && request.isRequestedSessionIdValid()) {
             return AuthType.FORM;
         }

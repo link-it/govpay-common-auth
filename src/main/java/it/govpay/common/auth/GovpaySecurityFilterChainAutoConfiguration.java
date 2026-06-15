@@ -1,6 +1,8 @@
 package it.govpay.common.auth;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -12,6 +14,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpMethod;
+import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.authentication.ProviderManager;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -22,7 +25,11 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.AccessDeniedHandler;
+import org.springframework.security.web.authentication.preauth.AbstractPreAuthenticatedProcessingFilter;
+import org.springframework.security.web.authentication.preauth.PreAuthenticatedAuthenticationProvider;
+import org.springframework.security.web.authentication.preauth.x509.X509AuthenticationFilter;
 import org.springframework.security.web.authentication.www.BasicAuthenticationFilter;
+import org.springframework.security.core.userdetails.UserDetailsByNameServiceWrapper;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
 import org.springframework.security.web.util.matcher.RequestMatcher;
@@ -37,18 +44,17 @@ import it.govpay.common.auth.spi.JsonLoginResponseWriter;
  * Auto-configuration che assembla la {@link SecurityFilterChain} unica della
  * libreria con i filter dei metodi auth abilitati.
  *
- * <p>Modello: una sola chain ({@code securityMatcher("/**")}). Dentro la chain
- * coesistono i filter di Spring Security ({@code BasicAuthenticationFilter},
- * {@code LogoutFilter}, ...) e i filter custom della libreria
- * ({@code JsonUsernamePasswordAuthenticationFilter},
- * {@code AuthTypeStampingFilter}); ciascuno si attiva sul proprio "cue"
- * della request (header {@code Authorization: Basic}, body JSON su
- * {@code POST /auth/login}, ...).
+ * <p>Modello: una sola chain ({@code securityMatcher("/**")}). Dentro la
+ * chain coesistono filter di Spring Security (Basic, X509, LogoutFilter, ...)
+ * e filter custom della libreria (JsonLogin, HeaderPreAuth, SslHeaderPreAuth,
+ * ApiKey, AuthTypeStamping); ciascuno si attiva sul proprio "cue" della
+ * request.
  *
- * <p>La chain si registra solo se il consumer ha esposto un
- * {@link GovpayPrincipalLoader}. Il comportamento puntuale (CSRF, session
- * policy, filter aggiunti) si adatta alle property
- * {@code govpay.auth.<metodo>.enabled}.
+ * <p>Distribuzione manager: BASIC e SSL contribuiscono al manager di default
+ * della chain (entrambi sono triggerati da filter Spring built-in che usano
+ * quel manager). Gli altri metodi (FORM, API_KEY, HEADER, SSL_HEADER) hanno
+ * filter custom con manager dedicato, in modo da preservare la
+ * discriminazione per {@code AuthType} nel loader.
  */
 @AutoConfiguration(after = GovpayAuthAutoConfiguration.class)
 @ConditionalOnClass(SecurityFilterChain.class)
@@ -57,8 +63,8 @@ public class GovpaySecurityFilterChainAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    public AuthTypeStampingFilter authTypeStampingFilter() {
-        return new AuthTypeStampingFilter();
+    public AuthTypeStampingFilter authTypeStampingFilter(GovpayAuthProperties properties) {
+        return new AuthTypeStampingFilter(properties);
     }
 
     @Bean
@@ -89,10 +95,42 @@ public class GovpaySecurityFilterChainAutoConfiguration {
         JsonUsernamePasswordAuthenticationFilter filter = new JsonUsernamePasswordAuthenticationFilter(
                 properties.getForm().getLoginPath(),
                 objectMapper, responseWriter, eventListener, rateLimiter);
-        DaoAuthenticationProvider formProvider = new DaoAuthenticationProvider(formUds);
-        formProvider.setPasswordEncoder(passwordEncoder);
-        filter.setAuthenticationManager(new ProviderManager(formProvider));
+        filter.setAuthenticationManager(new ProviderManager(daoProvider(formUds, passwordEncoder)));
         return filter;
+    }
+
+    @Bean
+    @ConditionalOnProperty(prefix = "govpay.auth.header", name = "enabled")
+    public HeaderPreAuthenticationFilter headerPreAuthenticationFilter(
+            GovpayAuthProperties properties,
+            @Qualifier("headerUserDetailsService") UserDetailsService headerUds) {
+        HeaderPreAuthenticationFilter filter = new HeaderPreAuthenticationFilter(
+                properties.getHeader().getPrincipalHeaderName());
+        filter.setAuthenticationManager(new ProviderManager(preAuthProvider(headerUds)));
+        return filter;
+    }
+
+    @Bean
+    @ConditionalOnProperty(prefix = "govpay.auth.ssl-header", name = "enabled")
+    public SslHeaderPreAuthenticationFilter sslHeaderPreAuthenticationFilter(
+            GovpayAuthProperties properties,
+            @Qualifier("sslHeaderUserDetailsService") UserDetailsService sslHeaderUds) {
+        SslHeaderPreAuthenticationFilter filter = new SslHeaderPreAuthenticationFilter(
+                properties.getSslHeader().getPrincipalHeaderName());
+        filter.setAuthenticationManager(new ProviderManager(preAuthProvider(sslHeaderUds)));
+        return filter;
+    }
+
+    @Bean
+    @ConditionalOnProperty(prefix = "govpay.auth.api-key", name = "enabled")
+    public ApiKeyAuthenticationFilter apiKeyAuthenticationFilter(
+            GovpayAuthProperties properties,
+            @Qualifier("apiKeyUserDetailsService") UserDetailsService apiKeyUds,
+            PasswordEncoder passwordEncoder) {
+        return new ApiKeyAuthenticationFilter(
+                properties.getApiKey().getIdHeaderName(),
+                properties.getApiKey().getKeyHeaderName(),
+                new ProviderManager(daoProvider(apiKeyUds, passwordEncoder)));
     }
 
     @Bean
@@ -103,7 +141,11 @@ public class GovpaySecurityFilterChainAutoConfiguration {
             AccessDeniedHandler accessDeniedHandler,
             AuthTypeStampingFilter authTypeStampingFilter,
             ObjectProvider<JsonUsernamePasswordAuthenticationFilter> jsonLoginFilterProvider,
+            ObjectProvider<HeaderPreAuthenticationFilter> headerFilterProvider,
+            ObjectProvider<SslHeaderPreAuthenticationFilter> sslHeaderFilterProvider,
+            ObjectProvider<ApiKeyAuthenticationFilter> apiKeyFilterProvider,
             @Qualifier("basicUserDetailsService") ObjectProvider<UserDetailsService> basicUdsProvider,
+            @Qualifier("sslUserDetailsService") ObjectProvider<UserDetailsService> sslUdsProvider,
             PasswordEncoder passwordEncoder,
             GovpayAuthProperties properties,
             AuthEventListener eventListener) throws Exception {
@@ -119,14 +161,30 @@ public class GovpaySecurityFilterChainAutoConfiguration {
 
         configureSession(http, formEnabled);
         configureCsrf(http, form, formEnabled);
-        configureBasic(http, basicUdsProvider, passwordEncoder, properties, authenticationEntryPoint);
+        configureChainManagerAndBuiltins(http, properties, basicUdsProvider, sslUdsProvider,
+                passwordEncoder, authenticationEntryPoint);
         configureFormLogout(http, form, formEnabled, eventListener);
 
-        // I filter custom della libreria
-        jsonLoginFilterProvider.ifAvailable(f -> http.addFilterAfter(f, BasicAuthenticationFilter.class));
+        // Filter custom della libreria: posizionati prima/dopo Basic per ordine deterministico.
+        jsonLoginFilterProvider.ifAvailable(f -> http.addFilterBefore(f, BasicAuthenticationFilter.class));
+        apiKeyFilterProvider.ifAvailable(f -> http.addFilterBefore(f, BasicAuthenticationFilter.class));
+        headerFilterProvider.ifAvailable(f -> http.addFilterBefore(f, BasicAuthenticationFilter.class));
+        sslHeaderFilterProvider.ifAvailable(f -> http.addFilterBefore(f, BasicAuthenticationFilter.class));
         http.addFilterAfter(authTypeStampingFilter, BasicAuthenticationFilter.class);
 
         return http.build();
+    }
+
+    private static DaoAuthenticationProvider daoProvider(UserDetailsService uds, PasswordEncoder encoder) {
+        DaoAuthenticationProvider provider = new DaoAuthenticationProvider(uds);
+        provider.setPasswordEncoder(encoder);
+        return provider;
+    }
+
+    private static PreAuthenticatedAuthenticationProvider preAuthProvider(UserDetailsService uds) {
+        PreAuthenticatedAuthenticationProvider provider = new PreAuthenticatedAuthenticationProvider();
+        provider.setPreAuthenticatedUserDetailsService(new UserDetailsByNameServiceWrapper<>(uds));
+        return provider;
     }
 
     private static void configureSession(HttpSecurity http, boolean formEnabled) throws Exception {
@@ -151,36 +209,50 @@ public class GovpaySecurityFilterChainAutoConfiguration {
         repo.setHeaderName(form.getCsrfHeaderName());
         String loginPath = form.getLoginPath();
         RequestMatcher ignore = request -> {
-            // Il login stesso emette il token: non puo' richiederlo.
             if ("POST".equalsIgnoreCase(request.getMethod()) && loginPath.equals(request.getRequestURI())) {
                 return true;
             }
-            // Stateless: header Authorization presente -> niente CSRF.
             if (request.getHeader("Authorization") != null) {
                 return true;
             }
-            // Niente cookie sessione = nessuna possibilita' di CSRF.
             return request.getRequestedSessionId() == null;
         };
         http.csrf(c -> c.csrfTokenRepository(repo).ignoringRequestMatchers(ignore));
     }
 
-    private static void configureBasic(HttpSecurity http,
-                                       ObjectProvider<UserDetailsService> basicUdsProvider,
-                                       PasswordEncoder passwordEncoder,
-                                       GovpayAuthProperties properties,
-                                       AuthenticationEntryPoint entryPoint) throws Exception {
-        if (!properties.getBasic().isEnabled()) {
-            return;
+    /**
+     * Costruisce il manager di default della chain (usato da BasicAuthenticationFilter
+     * e X509AuthenticationFilter) con i provider per BASIC e SSL, e attiva
+     * i corrispondenti filter built-in di Spring Security.
+     */
+    private static void configureChainManagerAndBuiltins(
+            HttpSecurity http,
+            GovpayAuthProperties properties,
+            ObjectProvider<UserDetailsService> basicUdsProvider,
+            ObjectProvider<UserDetailsService> sslUdsProvider,
+            PasswordEncoder passwordEncoder,
+            AuthenticationEntryPoint entryPoint) throws Exception {
+        List<AuthenticationProvider> providers = new ArrayList<>();
+        boolean basicActive = properties.getBasic().isEnabled() && basicUdsProvider.getIfAvailable() != null;
+        boolean sslActive = properties.getSsl().isEnabled() && sslUdsProvider.getIfAvailable() != null;
+        if (basicActive) {
+            providers.add(daoProvider(basicUdsProvider.getObject(), passwordEncoder));
         }
-        UserDetailsService basicUds = basicUdsProvider.getIfAvailable();
-        if (basicUds == null) {
-            return;
+        if (sslActive) {
+            providers.add(preAuthProvider(sslUdsProvider.getObject()));
         }
-        DaoAuthenticationProvider basicProvider = new DaoAuthenticationProvider(basicUds);
-        basicProvider.setPasswordEncoder(passwordEncoder);
-        http.authenticationManager(new ProviderManager(basicProvider));
-        http.httpBasic(b -> b.authenticationEntryPoint(entryPoint));
+        if (!providers.isEmpty()) {
+            http.authenticationManager(new ProviderManager(providers));
+        }
+        if (basicActive) {
+            http.httpBasic(b -> b.authenticationEntryPoint(entryPoint));
+        }
+        if (sslActive) {
+            String regex = properties.getSsl().getSubjectPrincipalRegex();
+            http.x509(x -> x
+                    .subjectPrincipalRegex(regex)
+                    .userDetailsService(sslUdsProvider.getObject()));
+        }
     }
 
     private static void configureFormLogout(HttpSecurity http,

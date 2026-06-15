@@ -84,6 +84,54 @@ class GovpaySecurityFilterChainAutoConfigurationTest {
                 });
     }
 
+    @Test
+    void headerFilterRegisteredWhenHeaderEnabled() {
+        runner.withUserConfiguration(LoaderConfig.class)
+                .withPropertyValues("govpay.auth.header.enabled=true")
+                .run(context -> {
+                    assertThat(context).hasSingleBean(HeaderPreAuthenticationFilter.class);
+                    assertThat(context).doesNotHaveBean(SslHeaderPreAuthenticationFilter.class);
+                    assertThat(context).doesNotHaveBean(ApiKeyAuthenticationFilter.class);
+                });
+    }
+
+    @Test
+    void sslHeaderFilterRegisteredWhenSslHeaderEnabled() {
+        runner.withUserConfiguration(LoaderConfig.class)
+                .withPropertyValues("govpay.auth.ssl-header.enabled=true")
+                .run(context -> {
+                    assertThat(context).hasSingleBean(SslHeaderPreAuthenticationFilter.class);
+                });
+    }
+
+    @Test
+    void apiKeyFilterRegisteredWhenApiKeyEnabled() {
+        runner.withUserConfiguration(LoaderConfig.class)
+                .withPropertyValues("govpay.auth.api-key.enabled=true")
+                .run(context -> {
+                    assertThat(context).hasSingleBean(ApiKeyAuthenticationFilter.class);
+                });
+    }
+
+    @Test
+    void allMethodsCanCoexist() {
+        runner.withUserConfiguration(LoaderConfig.class)
+                .withPropertyValues(
+                        "govpay.auth.basic.enabled=true",
+                        "govpay.auth.form.enabled=true",
+                        "govpay.auth.ssl.enabled=true",
+                        "govpay.auth.header.enabled=true",
+                        "govpay.auth.ssl-header.enabled=true",
+                        "govpay.auth.api-key.enabled=true")
+                .run(context -> {
+                    assertThat(context).hasSingleBean(SecurityFilterChain.class);
+                    assertThat(context).hasSingleBean(JsonUsernamePasswordAuthenticationFilter.class);
+                    assertThat(context).hasSingleBean(HeaderPreAuthenticationFilter.class);
+                    assertThat(context).hasSingleBean(SslHeaderPreAuthenticationFilter.class);
+                    assertThat(context).hasSingleBean(ApiKeyAuthenticationFilter.class);
+                });
+    }
+
     @Configuration(proxyBeanMethods = false)
     @EnableWebSecurity
     static class LoaderConfig {
