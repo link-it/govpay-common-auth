@@ -26,13 +26,42 @@ import jakarta.servlet.http.HttpServletResponse;
  * <p>Replica concettualmente il pattern V1 in cui ciascuna chain valorizzava
  * {@code utenza.autenticazione} con il proprio {@code authType}: qui la
  * "stampatura" e' centralizzata in un unico filter che riconosce il cue della
- * request (header {@code Authorization}, cookie sessione, certificato cert,
- * header pre-auth).
+ * request, con due percorsi possibili:
  *
- * <p>Ordine di riconoscimento: preset esplicito da un filter custom (ha
- * sempre la precedenza) &gt; {@code Authorization: Basic} &gt; certificato
- * X.509 client &gt; coppia header API_KEY &gt; header pre-auth HEADER &gt;
- * header pre-auth SSL_HEADER &gt; cookie sessione valido (FORM).
+ * <ol>
+ *   <li><b>Self-stamping</b>: i filter custom della libreria che hanno auth
+ *       success (JsonLogin → FORM, ApiKey → API_KEY, Header → HEADER,
+ *       SslHeader → SSL_HEADER) annotano l'attributo direttamente nel loro
+ *       {@code successfulAuthentication}. Quando lo stamping filter scorre
+ *       la request trova gia' l'attributo settato e lo lascia inalterato.
+ *       Questo evita falsi positivi sui filter pre-auth (es. header presente
+ *       ma authentication fallita → no stamping).</li>
+ *   <li><b>Detection</b> (fallback): per i filter built-in di Spring Security
+ *       ({@code BasicAuthenticationFilter}, {@code X509AuthenticationFilter})
+ *       che non controlliamo, lo stamping filter deriva l'{@link AuthType}
+ *       dal cue della request (header {@code Authorization: Basic},
+ *       attributo {@code jakarta.servlet.request.X509Certificate}).</li>
+ * </ol>
+ *
+ * <p><b>Ordine di rilevamento</b> nel fallback (in caso di piu' cue presenti
+ * contemporaneamente):
+ * <ol>
+ *   <li>Preset esplicito (settato da un filter custom su success) — sempre vince</li>
+ *   <li>{@code Authorization: Basic} header → {@link AuthType#BASIC}</li>
+ *   <li>Attributo {@code jakarta.servlet.request.X509Certificate} → {@link AuthType#SSL}</li>
+ *   <li>Cookie sessione valido → {@link AuthType#FORM}</li>
+ * </ol>
+ *
+ * <p>Per HEADER, SSL_HEADER, API_KEY il detection fallback verifica la
+ * presenza dell'header configurato come decisione last-resort, ma in
+ * pratica self-stamping ha sempre la precedenza.
+ *
+ * <p><b>Decisione su SSL vs SSL_HEADER coesistenti</b>: la presenza
+ * dell'attributo X.509 (TLS terminata in Tomcat con clientAuth) ha precedenza
+ * sulla presenza dell'header SSL_HEADER (TLS terminata upstream). Edge case
+ * teorico: tunneling esotico dove entrambi sono presenti — in pratica nessun
+ * deploy reale lo realizza, e l'evidence "backend ha verificato direttamente
+ * la mTLS" e' piu' autorevole.
  */
 public class AuthTypeStampingFilter extends OncePerRequestFilter {
 
@@ -75,27 +104,31 @@ public class AuthTypeStampingFilter extends OncePerRequestFilter {
     }
 
     private AuthType detect(HttpServletRequest request) {
-        // BASIC: Authorization header
+        // BASIC: Authorization header (Spring BasicAuthenticationFilter non self-stamps)
         String authorization = request.getHeader("Authorization");
         if (authorization != null && authorization.regionMatches(true, 0, BASIC_PREFIX, 0, BASIC_PREFIX.length())) {
             return AuthType.BASIC;
         }
-        // SSL: X.509 cert presentato a livello TLS
+        // SSL: X.509 cert a livello TLS (Spring X509AuthenticationFilter non self-stamps)
         if (request.getAttribute(X509_REQUEST_ATTRIBUTE) instanceof X509Certificate[]) {
             return AuthType.SSL;
         }
-        // API_KEY: coppia header configurati
+        // API_KEY: fallback per coppia header presente (in pratica raggiunto solo
+        // se ApiKeyAuthenticationFilter non e' montato ma un altro filter ha autenticato).
         if (properties.getApiKey().isEnabled()
                 && request.getHeader(properties.getApiKey().getIdHeaderName()) != null
                 && request.getHeader(properties.getApiKey().getKeyHeaderName()) != null) {
             return AuthType.API_KEY;
         }
-        // HEADER: principal in header configurato
-        if (properties.getHeader().isEnabled()
-                && request.getHeader(properties.getHeader().getPrincipalHeaderName()) != null) {
-            return AuthType.HEADER;
+        // HEADER: fallback per uno qualunque dei header configurati
+        if (properties.getHeader().isEnabled()) {
+            for (String header : properties.getHeader().getPrincipalHeaderNames()) {
+                if (request.getHeader(header) != null) {
+                    return AuthType.HEADER;
+                }
+            }
         }
-        // SSL_HEADER: cert subject in header configurato (proxy-terminated TLS)
+        // SSL_HEADER: fallback per header configurato (proxy-terminated TLS)
         if (properties.getSslHeader().isEnabled()
                 && request.getHeader(properties.getSslHeader().getPrincipalHeaderName()) != null) {
             return AuthType.SSL_HEADER;

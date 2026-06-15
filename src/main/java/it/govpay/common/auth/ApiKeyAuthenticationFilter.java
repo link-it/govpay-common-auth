@@ -13,6 +13,9 @@ import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.filter.OncePerRequestFilter;
 
+import it.govpay.common.auth.spi.AuthType;
+import it.govpay.common.auth.spi.AuthenticationDetailsContributor;
+
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -38,12 +41,15 @@ public class ApiKeyAuthenticationFilter extends OncePerRequestFilter {
     private final String idHeaderName;
     private final String keyHeaderName;
     private final AuthenticationManager authenticationManager;
+    private final AuthenticationDetailsContributor detailsContributor;
 
     public ApiKeyAuthenticationFilter(String idHeaderName, String keyHeaderName,
-                                      AuthenticationManager authenticationManager) {
+                                      AuthenticationManager authenticationManager,
+                                      AuthenticationDetailsContributor detailsContributor) {
         this.idHeaderName = Objects.requireNonNull(idHeaderName, "idHeaderName");
         this.keyHeaderName = Objects.requireNonNull(keyHeaderName, "keyHeaderName");
         this.authenticationManager = Objects.requireNonNull(authenticationManager, "authenticationManager");
+        this.detailsContributor = Objects.requireNonNull(detailsContributor, "detailsContributor");
     }
 
     @Override
@@ -57,11 +63,13 @@ public class ApiKeyAuthenticationFilter extends OncePerRequestFilter {
         }
         UsernamePasswordAuthenticationToken authRequest =
                 UsernamePasswordAuthenticationToken.unauthenticated(id, key);
+        authRequest.setDetails(detailsContributor.buildDetails(request, AuthType.API_KEY));
         try {
             Authentication authResult = authenticationManager.authenticate(authRequest);
             SecurityContext context = SecurityContextHolder.createEmptyContext();
             context.setAuthentication(authResult);
             SecurityContextHolder.setContext(context);
+            request.setAttribute(AuthTypeStampingFilter.REQUEST_ATTRIBUTE, AuthType.API_KEY);
         } catch (AuthenticationException ex) {
             log.debug("Autenticazione API_KEY fallita per id={}", id, ex);
             SecurityContextHolder.clearContext();

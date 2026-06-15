@@ -37,6 +37,8 @@ import org.springframework.security.web.util.matcher.RequestMatcher;
 import tools.jackson.databind.ObjectMapper;
 
 import it.govpay.common.auth.spi.AuthEventListener;
+import it.govpay.common.auth.spi.AuthType;
+import it.govpay.common.auth.spi.AuthenticationDetailsContributor;
 import it.govpay.common.auth.spi.GovpayPrincipalLoader;
 import it.govpay.common.auth.spi.JsonLoginResponseWriter;
 
@@ -90,11 +92,12 @@ public class GovpaySecurityFilterChainAutoConfiguration {
             JsonLoginResponseWriter responseWriter,
             AuthEventListener eventListener,
             LoginRateLimiter rateLimiter,
+            AuthenticationDetailsContributor detailsContributor,
             @Qualifier("formUserDetailsService") UserDetailsService formUds,
             PasswordEncoder passwordEncoder) {
         JsonUsernamePasswordAuthenticationFilter filter = new JsonUsernamePasswordAuthenticationFilter(
                 properties.getForm().getLoginPath(),
-                objectMapper, responseWriter, eventListener, rateLimiter);
+                objectMapper, responseWriter, eventListener, rateLimiter, detailsContributor);
         filter.setAuthenticationManager(new ProviderManager(daoProvider(formUds, passwordEncoder)));
         return filter;
     }
@@ -103,10 +106,12 @@ public class GovpaySecurityFilterChainAutoConfiguration {
     @ConditionalOnProperty(prefix = "govpay.auth.header", name = "enabled")
     public HeaderPreAuthenticationFilter headerPreAuthenticationFilter(
             GovpayAuthProperties properties,
+            AuthenticationDetailsContributor detailsContributor,
             @Qualifier("headerUserDetailsService") UserDetailsService headerUds) {
         HeaderPreAuthenticationFilter filter = new HeaderPreAuthenticationFilter(
-                properties.getHeader().getPrincipalHeaderName());
+                properties.getHeader().getPrincipalHeaderNames());
         filter.setAuthenticationManager(new ProviderManager(preAuthProvider(headerUds)));
+        filter.setAuthenticationDetailsSource(request -> detailsContributor.buildDetails(request, AuthType.HEADER));
         return filter;
     }
 
@@ -114,10 +119,11 @@ public class GovpaySecurityFilterChainAutoConfiguration {
     @ConditionalOnProperty(prefix = "govpay.auth.ssl-header", name = "enabled")
     public SslHeaderPreAuthenticationFilter sslHeaderPreAuthenticationFilter(
             GovpayAuthProperties properties,
+            AuthenticationDetailsContributor detailsContributor,
             @Qualifier("sslHeaderUserDetailsService") UserDetailsService sslHeaderUds) {
-        SslHeaderPreAuthenticationFilter filter = new SslHeaderPreAuthenticationFilter(
-                properties.getSslHeader().getPrincipalHeaderName());
+        SslHeaderPreAuthenticationFilter filter = new SslHeaderPreAuthenticationFilter(properties.getSslHeader());
         filter.setAuthenticationManager(new ProviderManager(preAuthProvider(sslHeaderUds)));
+        filter.setAuthenticationDetailsSource(request -> detailsContributor.buildDetails(request, AuthType.SSL_HEADER));
         return filter;
     }
 
@@ -125,12 +131,14 @@ public class GovpaySecurityFilterChainAutoConfiguration {
     @ConditionalOnProperty(prefix = "govpay.auth.api-key", name = "enabled")
     public ApiKeyAuthenticationFilter apiKeyAuthenticationFilter(
             GovpayAuthProperties properties,
+            AuthenticationDetailsContributor detailsContributor,
             @Qualifier("apiKeyUserDetailsService") UserDetailsService apiKeyUds,
             PasswordEncoder passwordEncoder) {
         return new ApiKeyAuthenticationFilter(
                 properties.getApiKey().getIdHeaderName(),
                 properties.getApiKey().getKeyHeaderName(),
-                new ProviderManager(daoProvider(apiKeyUds, passwordEncoder)));
+                new ProviderManager(daoProvider(apiKeyUds, passwordEncoder)),
+                detailsContributor);
     }
 
     @Bean
@@ -148,7 +156,8 @@ public class GovpaySecurityFilterChainAutoConfiguration {
             @Qualifier("sslUserDetailsService") ObjectProvider<UserDetailsService> sslUdsProvider,
             PasswordEncoder passwordEncoder,
             GovpayAuthProperties properties,
-            AuthEventListener eventListener) throws Exception {
+            AuthEventListener eventListener,
+            ObjectMapper objectMapper) throws Exception {
 
         GovpayAuthProperties.Form form = properties.getForm();
         boolean formEnabled = form.isEnabled();
@@ -159,7 +168,8 @@ public class GovpaySecurityFilterChainAutoConfiguration {
                         .accessDeniedHandler(accessDeniedHandler))
                 .authorizeHttpRequests(a -> a.anyRequest().authenticated());
 
-        configureSession(http, formEnabled);
+        configureHeaders(http, properties.getHeaders());
+        configureSession(http, formEnabled, objectMapper);
         configureCsrf(http, form, formEnabled);
         configureChainManagerAndBuiltins(http, properties, basicUdsProvider, sslUdsProvider,
                 passwordEncoder, authenticationEntryPoint);
@@ -187,11 +197,36 @@ public class GovpaySecurityFilterChainAutoConfiguration {
         return provider;
     }
 
-    private static void configureSession(HttpSecurity http, boolean formEnabled) throws Exception {
+    private static void configureHeaders(HttpSecurity http,
+                                         GovpayAuthProperties.Headers headers) throws Exception {
+        http.headers(h -> {
+            if (!headers.isContentTypeOptionsEnabled()) {
+                h.contentTypeOptions(c -> c.disable());
+            }
+            if (!headers.isFrameOptionsEnabled()) {
+                h.frameOptions(f -> f.disable());
+            }
+            if (!headers.isXssProtectionEnabled()) {
+                h.xssProtection(x -> x.disable());
+            }
+        });
+    }
+
+    private static void configureSession(HttpSecurity http,
+                                         boolean formEnabled,
+                                         ObjectMapper objectMapper) throws Exception {
         if (formEnabled) {
+            // Replica V1: session invalida / scaduta -> 401 problem+json
+            // (NotAuthorizedInvalidSessionStrategy + NotAuthorizedSessionInformationExpiredStrategy).
+            ProblemInvalidSessionStrategy invalidSession = new ProblemInvalidSessionStrategy(objectMapper);
+            ProblemSessionInformationExpiredStrategy expiredSession =
+                    new ProblemSessionInformationExpiredStrategy(objectMapper);
             http.sessionManagement(s -> s
                     .sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED)
-                    .sessionFixation(fixation -> fixation.changeSessionId()));
+                    .sessionFixation(fixation -> fixation.changeSessionId())
+                    .invalidSessionStrategy(invalidSession)
+                    .maximumSessions(2)
+                    .expiredSessionStrategy(expiredSession));
         } else {
             http.sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS));
         }

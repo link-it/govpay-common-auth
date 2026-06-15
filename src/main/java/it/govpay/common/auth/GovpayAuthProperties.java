@@ -1,5 +1,8 @@
 package it.govpay.common.auth;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
@@ -22,6 +25,8 @@ public class GovpayAuthProperties {
     private final SslHeader sslHeader = new SslHeader();
     private final Header header = new Header();
     private final ApiKey apiKey = new ApiKey();
+    private final Headers headers = new Headers();
+    private final Firewall firewall = new Firewall();
     private final Method spid = new Method();
     private final Method session = new Method();
     private final Method oauth2 = new Method();
@@ -73,6 +78,14 @@ public class GovpayAuthProperties {
      */
     public Method getPublicChain() {
         return publicChain;
+    }
+
+    public Headers getHeaders() {
+        return headers;
+    }
+
+    public Firewall getFirewall() {
+        return firewall;
     }
 
     /**
@@ -185,18 +198,26 @@ public class GovpayAuthProperties {
     /**
      * Configurazione del metodo HEADER (principal in header HTTP, tipico di
      * reverse proxy che ha gia' autenticato l'utente a monte).
+     *
+     * <p>V1-aligned: la property e' una lista di nomi header. Il filter
+     * itera in ordine, prende il valore del primo header non-vuoto presente
+     * sulla request.
      */
     public static class Header extends Method {
 
-        /** Nome dell'header che porta il principal. */
-        private String principalHeaderName = "X-Pre-Auth-User";
+        /**
+         * Nomi degli header da consultare in ordine. Il primo non-null/non-blank
+         * fornisce il principal. Replica V1 {@code getAutenticazioneHeaderNomeHeaderPrincipal()}
+         * che ritornava una {@code List<String>}.
+         */
+        private List<String> principalHeaderNames = new ArrayList<>(List.of("X-Pre-Auth-User"));
 
-        public String getPrincipalHeaderName() {
-            return principalHeaderName;
+        public List<String> getPrincipalHeaderNames() {
+            return principalHeaderNames;
         }
 
-        public void setPrincipalHeaderName(String principalHeaderName) {
-            this.principalHeaderName = principalHeaderName;
+        public void setPrincipalHeaderNames(List<String> principalHeaderNames) {
+            this.principalHeaderNames = principalHeaderNames;
         }
     }
 
@@ -204,15 +225,49 @@ public class GovpayAuthProperties {
      * Configurazione del metodo SSL_HEADER (certificato client SSL inoltrato
      * via header da reverse proxy / API gateway).
      *
-     * <p>Versione semplificata rispetto a V1: si assume che l'header porti gia'
-     * il subject DN pronto. Encoding base64/URL e replace caratteri sono
-     * fuori scope; gateway che ne abbiano bisogno possono pre-decodificare
-     * a monte oppure registrare un decoder custom.
+     * <p>Replica fedelmente la pipeline V1 di {@code SSLHeaderPreAuthFilter}:
+     * replace caratteri (per gestire i caratteri di escape introdotti dai
+     * proxy come {@code \t} al posto di {@code \n}) + try-fallback decoding
+     * (URL → Base64 → Hex) + parsing X.509 + estrazione subject DN in formato
+     * RFC 2253 (= {@code X500Principal.toString()}, identico a V1).
      */
     public static class SslHeader extends Method {
 
-        /** Nome dell'header che porta il subject DN del certificato. */
-        private String principalHeaderName = "X-SSL-Client-S-Dn";
+        /** Nome dell'header che porta il certificato (o subject DN gia' pronto). */
+        private String principalHeaderName = "X-SSL-Client-Cert";
+
+        /** Se true, URL-decodifica il contenuto dell'header prima di parsarlo. */
+        private boolean urlDecode = false;
+
+        /** Se true, base64-decodifica il contenuto dell'header prima di parsarlo. */
+        private boolean base64Decode = false;
+
+        /**
+         * Se true, hex-decodifica il contenuto dell'header prima di parsarlo.
+         * Replica per fedelta' V1, dove il branch hex era opzionale ma supportato.
+         */
+        private boolean hexDecode = false;
+
+        /**
+         * Se true, applica la sostituzione di caratteri sul body PEM
+         * (protezione dei marker BEGIN/END inclusa) prima del decoding.
+         * Caso d'uso: nginx con {@code $ssl_client_escaped_cert} che sostituisce
+         * le newline con tab.
+         */
+        private boolean replaceCharactersEnabled = false;
+
+        /**
+         * Carattere/i da sostituire nel body PEM. Default V1: {@code \t} (tab).
+         * Le stringhe letterali {@code \t}, {@code \r}, {@code \n}, {@code \r\n},
+         * {@code \s} vengono tradotte nel rispettivo carattere reale (compat V1).
+         */
+        private String replaceSource;
+
+        /**
+         * Carattere/i di destinazione. Default V1: {@code \n} (newline).
+         * Stesso trattamento delle stringhe letterali di {@code replaceSource}.
+         */
+        private String replaceDest;
 
         public String getPrincipalHeaderName() {
             return principalHeaderName;
@@ -220,6 +275,54 @@ public class GovpayAuthProperties {
 
         public void setPrincipalHeaderName(String principalHeaderName) {
             this.principalHeaderName = principalHeaderName;
+        }
+
+        public boolean isUrlDecode() {
+            return urlDecode;
+        }
+
+        public void setUrlDecode(boolean urlDecode) {
+            this.urlDecode = urlDecode;
+        }
+
+        public boolean isBase64Decode() {
+            return base64Decode;
+        }
+
+        public void setBase64Decode(boolean base64Decode) {
+            this.base64Decode = base64Decode;
+        }
+
+        public boolean isHexDecode() {
+            return hexDecode;
+        }
+
+        public void setHexDecode(boolean hexDecode) {
+            this.hexDecode = hexDecode;
+        }
+
+        public boolean isReplaceCharactersEnabled() {
+            return replaceCharactersEnabled;
+        }
+
+        public void setReplaceCharactersEnabled(boolean replaceCharactersEnabled) {
+            this.replaceCharactersEnabled = replaceCharactersEnabled;
+        }
+
+        public String getReplaceSource() {
+            return replaceSource;
+        }
+
+        public void setReplaceSource(String replaceSource) {
+            this.replaceSource = replaceSource;
+        }
+
+        public String getReplaceDest() {
+            return replaceDest;
+        }
+
+        public void setReplaceDest(String replaceDest) {
+            this.replaceDest = replaceDest;
         }
     }
 
@@ -277,6 +380,83 @@ public class GovpayAuthProperties {
 
         public void setWindowMinutes(int windowMinutes) {
             this.windowMinutes = windowMinutes;
+        }
+    }
+
+    /**
+     * Configurazione degli header HTTP di sicurezza sulle response della chain.
+     *
+     * <p>Default V2-modern: tutti abilitati (Spring Security 7 default).
+     * V1 li disabilitava esplicitamente su tutte le chain attive
+     * ({@code basic}, {@code ssl}, {@code form}): chi vuole rispettare V1 al
+     * 100% imposta i tre flag a {@code false}.
+     */
+    public static class Headers {
+
+        /** Se true, manda {@code X-Content-Type-Options: nosniff}. */
+        private boolean contentTypeOptionsEnabled = true;
+
+        /** Se true, manda {@code X-Frame-Options: DENY}. */
+        private boolean frameOptionsEnabled = true;
+
+        /** Se true, manda {@code X-XSS-Protection}. */
+        private boolean xssProtectionEnabled = true;
+
+        public boolean isContentTypeOptionsEnabled() {
+            return contentTypeOptionsEnabled;
+        }
+
+        public void setContentTypeOptionsEnabled(boolean contentTypeOptionsEnabled) {
+            this.contentTypeOptionsEnabled = contentTypeOptionsEnabled;
+        }
+
+        public boolean isFrameOptionsEnabled() {
+            return frameOptionsEnabled;
+        }
+
+        public void setFrameOptionsEnabled(boolean frameOptionsEnabled) {
+            this.frameOptionsEnabled = frameOptionsEnabled;
+        }
+
+        public boolean isXssProtectionEnabled() {
+            return xssProtectionEnabled;
+        }
+
+        public void setXssProtectionEnabled(boolean xssProtectionEnabled) {
+            this.xssProtectionEnabled = xssProtectionEnabled;
+        }
+    }
+
+    /**
+     * Configurazione di {@code StrictHttpFirewall} di Spring Security.
+     *
+     * <p>Default V1-aligned: {@code allowUrlEncodedSlash=true},
+     * {@code allowUrlEncodedPercent=true}. Necessario per gli identificativi
+     * pagopa che contengono {@code /} (e quindi {@code %2F} encoded) nei
+     * path REST.
+     */
+    public static class Firewall {
+
+        /** Replica V1: {@code allowUrlEncodedSlash="true"}. */
+        private boolean allowUrlEncodedSlash = true;
+
+        /** Replica V1: {@code allowUrlEncodedPercent="true"}. */
+        private boolean allowUrlEncodedPercent = true;
+
+        public boolean isAllowUrlEncodedSlash() {
+            return allowUrlEncodedSlash;
+        }
+
+        public void setAllowUrlEncodedSlash(boolean allowUrlEncodedSlash) {
+            this.allowUrlEncodedSlash = allowUrlEncodedSlash;
+        }
+
+        public boolean isAllowUrlEncodedPercent() {
+            return allowUrlEncodedPercent;
+        }
+
+        public void setAllowUrlEncodedPercent(boolean allowUrlEncodedPercent) {
+            this.allowUrlEncodedPercent = allowUrlEncodedPercent;
         }
     }
 

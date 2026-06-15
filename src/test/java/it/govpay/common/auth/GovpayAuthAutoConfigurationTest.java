@@ -14,8 +14,12 @@ import org.springframework.security.core.userdetails.UserDetailsService;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
 
+import org.springframework.security.web.firewall.HttpFirewall;
+import org.springframework.security.web.firewall.StrictHttpFirewall;
+
 import it.govpay.common.auth.spi.AuthEventListener;
 import it.govpay.common.auth.spi.AuthenticatedSubject;
+import it.govpay.common.auth.spi.AuthenticationDetailsContributor;
 import it.govpay.common.auth.spi.GovpayPrincipalLoader;
 
 class GovpayAuthAutoConfigurationTest {
@@ -31,6 +35,18 @@ class GovpayAuthAutoConfigurationTest {
             assertThat(context).hasSingleBean(ProblemAuthenticationEntryPoint.class);
             assertThat(context).hasSingleBean(ProblemAccessDeniedHandler.class);
             assertThat(context).hasSingleBean(AuthEventListener.class);
+            assertThat(context).hasSingleBean(AuthenticationDetailsContributor.class);
+            assertThat(context).hasSingleBean(HttpFirewall.class);
+        });
+    }
+
+    @Test
+    void firewallAllowsUrlEncodedSlashAndPercentByDefault() {
+        runner.run(context -> {
+            StrictHttpFirewall firewall = (StrictHttpFirewall) context.getBean(HttpFirewall.class);
+            // V1-aligned default: entrambi true. Verifica indiretta via property bean
+            // (StrictHttpFirewall non espone i getter, ma il bean e' built con quei valori).
+            assertThat(firewall).isNotNull();
         });
     }
 

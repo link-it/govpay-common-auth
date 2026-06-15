@@ -30,7 +30,7 @@ class ApiKeyAuthenticationFilterTest {
             throw new IllegalStateException("manager non avrebbe dovuto essere chiamato");
         };
         ApiKeyAuthenticationFilter filter = new ApiKeyAuthenticationFilter(
-                "X-Govpay-API-ID", "X-Govpay-API-Key", manager);
+                "X-Govpay-API-ID", "X-Govpay-API-Key", manager, new DefaultAuthenticationDetailsContributor());
         MockHttpServletRequest request = new MockHttpServletRequest();
         MockHttpServletResponse response = new MockHttpServletResponse();
         MockFilterChain chain = new MockFilterChain();
@@ -47,7 +47,7 @@ class ApiKeyAuthenticationFilterTest {
                 authentication.getName(), null,
                 List.of(new SimpleGrantedAuthority("ROLE_APPLICAZIONE")));
         ApiKeyAuthenticationFilter filter = new ApiKeyAuthenticationFilter(
-                "X-Govpay-API-ID", "X-Govpay-API-Key", manager);
+                "X-Govpay-API-ID", "X-Govpay-API-Key", manager, new DefaultAuthenticationDetailsContributor());
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.addHeader("X-Govpay-API-ID", "client-001");
         request.addHeader("X-Govpay-API-Key", "secret-key");
@@ -66,7 +66,7 @@ class ApiKeyAuthenticationFilterTest {
             throw new BadCredentialsException("nope");
         };
         ApiKeyAuthenticationFilter filter = new ApiKeyAuthenticationFilter(
-                "X-Govpay-API-ID", "X-Govpay-API-Key", manager);
+                "X-Govpay-API-ID", "X-Govpay-API-Key", manager, new DefaultAuthenticationDetailsContributor());
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.addHeader("X-Govpay-API-ID", "client-001");
         request.addHeader("X-Govpay-API-Key", "wrong-key");

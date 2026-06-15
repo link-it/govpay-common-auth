@@ -22,6 +22,7 @@ import tools.jackson.databind.ObjectMapper;
 
 import it.govpay.common.auth.spi.AuthEventListener;
 import it.govpay.common.auth.spi.AuthType;
+import it.govpay.common.auth.spi.AuthenticationDetailsContributor;
 import it.govpay.common.auth.spi.FailureReason;
 import it.govpay.common.auth.spi.JsonLoginResponseWriter;
 
@@ -63,17 +64,20 @@ public class JsonUsernamePasswordAuthenticationFilter extends AbstractAuthentica
     private final JsonLoginResponseWriter responseWriter;
     private final AuthEventListener eventListener;
     private final LoginRateLimiter rateLimiter;
+    private final AuthenticationDetailsContributor detailsContributor;
 
     public JsonUsernamePasswordAuthenticationFilter(String loginPath,
                                                     ObjectMapper objectMapper,
                                                     JsonLoginResponseWriter responseWriter,
                                                     AuthEventListener eventListener,
-                                                    LoginRateLimiter rateLimiter) {
+                                                    LoginRateLimiter rateLimiter,
+                                                    AuthenticationDetailsContributor detailsContributor) {
         super(loginMatcher(loginPath));
         this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
         this.responseWriter = Objects.requireNonNull(responseWriter, "responseWriter");
         this.eventListener = Objects.requireNonNull(eventListener, "eventListener");
         this.rateLimiter = Objects.requireNonNull(rateLimiter, "rateLimiter");
+        this.detailsContributor = Objects.requireNonNull(detailsContributor, "detailsContributor");
     }
 
     private static RequestMatcher loginMatcher(String loginPath) {
@@ -115,6 +119,7 @@ public class JsonUsernamePasswordAuthenticationFilter extends AbstractAuthentica
 
         UsernamePasswordAuthenticationToken token =
                 UsernamePasswordAuthenticationToken.unauthenticated(body.username(), body.password());
+        token.setDetails(detailsContributor.buildDetails(request, AuthType.FORM));
         return getAuthenticationManager().authenticate(token);
     }
 

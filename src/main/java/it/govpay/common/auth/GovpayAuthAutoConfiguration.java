@@ -11,11 +11,14 @@ import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.access.AccessDeniedHandler;
+import org.springframework.security.web.firewall.HttpFirewall;
+import org.springframework.security.web.firewall.StrictHttpFirewall;
 
 import tools.jackson.databind.ObjectMapper;
 
 import it.govpay.common.auth.spi.AuthEventListener;
 import it.govpay.common.auth.spi.AuthType;
+import it.govpay.common.auth.spi.AuthenticationDetailsContributor;
 import it.govpay.common.auth.spi.GovpayPrincipalLoader;
 
 /**
@@ -68,6 +71,37 @@ public class GovpayAuthAutoConfiguration {
         return new AuthEventListener() {
             // tutti i metodi sono default no-op
         };
+    }
+
+    /**
+     * Default per {@link AuthenticationDetailsContributor}: delega a
+     * {@code WebAuthenticationDetailsSource} di Spring (equivalente al
+     * comportamento V1 sui metodi BASIC/FORM/SSL). Il consumer puo'
+     * sostituirlo con un proprio bean per catturare header custom,
+     * attributi SPID, ecc.
+     */
+    @Bean
+    @ConditionalOnMissingBean
+    public AuthenticationDetailsContributor defaultAuthenticationDetailsContributor() {
+        return new DefaultAuthenticationDetailsContributor();
+    }
+
+    /**
+     * {@link HttpFirewall} configurato con le property
+     * {@code govpay.auth.firewall.*}. Default V1: {@code allowUrlEncodedSlash=true}
+     * e {@code allowUrlEncodedPercent=true} per accettare identificativi
+     * pagopa che contengono {@code /} o {@code %} URL-encoded nel path.
+     *
+     * <p>Spring Boot autodetecta questo bean e lo registra sul
+     * {@code WebSecurity} senza ulteriore wiring.
+     */
+    @Bean
+    @ConditionalOnMissingBean(HttpFirewall.class)
+    public HttpFirewall httpFirewall(GovpayAuthProperties properties) {
+        StrictHttpFirewall firewall = new StrictHttpFirewall();
+        firewall.setAllowUrlEncodedSlash(properties.getFirewall().isAllowUrlEncodedSlash());
+        firewall.setAllowUrlEncodedPercent(properties.getFirewall().isAllowUrlEncodedPercent());
+        return firewall;
     }
 
     /**
