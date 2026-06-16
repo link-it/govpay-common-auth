@@ -18,6 +18,7 @@ import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.authentication.ProviderManager;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
 import org.springframework.security.ldap.DefaultSpringSecurityContextSource;
+import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
 import org.springframework.security.ldap.authentication.BindAuthenticator;
 import org.springframework.security.ldap.authentication.LdapAuthenticationProvider;
 import org.springframework.security.ldap.search.FilterBasedLdapUserSearch;
@@ -118,6 +119,11 @@ public class GovpaySecurityFilterChainAutoConfiguration {
                 properties.getForm().getLoginPath(),
                 objectMapper, responseWriter, eventListener, rateLimiter, detailsContributor);
         filter.setAuthenticationManager(new ProviderManager(daoProvider(formUds, passwordEncoder)));
+        // Default in Spring Security 6+ e' RequestAttributeSecurityContextRepository:
+        // non crea sessione e perde il SecurityContext al return della chain. Per FORM
+        // (chiamato dal frontend che si aspetta JSESSIONID + XSRF-TOKEN) dobbiamo
+        // persistere il contesto in sessione.
+        filter.setSecurityContextRepository(new HttpSessionSecurityContextRepository());
         return filter;
     }
 

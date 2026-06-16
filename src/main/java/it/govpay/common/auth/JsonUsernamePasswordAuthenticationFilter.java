@@ -78,6 +78,14 @@ public class JsonUsernamePasswordAuthenticationFilter extends AbstractAuthentica
         this.eventListener = Objects.requireNonNull(eventListener, "eventListener");
         this.rateLimiter = Objects.requireNonNull(rateLimiter, "rateLimiter");
         this.detailsContributor = Objects.requireNonNull(detailsContributor, "detailsContributor");
+        // I default di AbstractAuthenticationProcessingFilter sono
+        // SavedRequestAwareAuthenticationSuccessHandler (302 a / o saved URL) e
+        // SimpleUrlAuthenticationFailureHandler (302 a /error). Per un endpoint
+        // JSON dobbiamo restare a 200 e a 401 problem+json: sovrascriviamo con
+        // no-op handler — il body lo scriviamo in successfulAuthentication /
+        // unsuccessfulAuthentication direttamente.
+        setAuthenticationSuccessHandler((req, res, auth) -> { /* no redirect */ });
+        setAuthenticationFailureHandler((req, res, ex) -> { /* no redirect */ });
     }
 
     private static RequestMatcher loginMatcher(String loginPath) {
@@ -131,6 +139,14 @@ public class JsonUsernamePasswordAuthenticationFilter extends AbstractAuthentica
         super.successfulAuthentication(request, response, chain, authResult);
         rateLimiter.reset(clientIp(request));
         request.setAttribute(AuthTypeStampingFilter.REQUEST_ATTRIBUTE, AuthType.FORM);
+        // Forza la materializzazione del CSRF token (lazy: CsrfFilter mette in
+        // request attribute un SupplierCsrfToken, ma la persistenza in cookie
+        // avviene solo al primo getToken()). Cosi' il frontend riceve
+        // XSRF-TOKEN sulla stessa response del login.
+        Object csrf = request.getAttribute(org.springframework.security.web.csrf.CsrfToken.class.getName());
+        if (csrf instanceof org.springframework.security.web.csrf.CsrfToken token) {
+            token.getToken();
+        }
         eventListener.onLoginSuccess(authResult.getName(), AuthType.FORM, request);
         response.setStatus(HttpStatus.OK.value());
         responseWriter.writeSuccessBody(response, authResult);
