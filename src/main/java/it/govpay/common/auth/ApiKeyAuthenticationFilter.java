@@ -69,7 +69,11 @@ public class ApiKeyAuthenticationFilter extends OncePerRequestFilter {
             SecurityContext context = SecurityContextHolder.createEmptyContext();
             context.setAuthentication(authResult);
             SecurityContextHolder.setContext(context);
-            request.setAttribute(AuthTypeStampingFilter.REQUEST_ATTRIBUTE, AuthType.API_KEY);
+            // NB: niente self-stamping qui. Lo stamping AuthType e' delegato a
+            // AuthTypeStampingFilter (registrato dopo BasicAuthFilter), che
+            // ricava il tipo dai cue della request: cosi' se un filter
+            // downstream (es. BasicAuthFilter con username diverso) sovrascrive
+            // il context, lo stamping riflette il vero metodo attivo.
         } catch (AuthenticationException ex) {
             log.debug("Autenticazione API_KEY fallita per id={}", id, ex);
             SecurityContextHolder.clearContext();

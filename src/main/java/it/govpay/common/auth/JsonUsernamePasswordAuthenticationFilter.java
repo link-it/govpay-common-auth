@@ -60,6 +60,16 @@ public class JsonUsernamePasswordAuthenticationFilter extends AbstractAuthentica
 
     private static final Logger log = LoggerFactory.getLogger(JsonUsernamePasswordAuthenticationFilter.class);
 
+    /**
+     * Nome dell'attributo di request in cui {@link #attemptAuthentication}
+     * stampa l'{@code username} parsato dal body, cosi' che
+     * {@link #unsuccessfulAuthentication} possa propagarlo come
+     * {@code attemptedPrincipal} all'{@link AuthEventListener#onLoginFailed}
+     * (l'{@link AuthenticationException} sollevata dal manager non porta lo
+     * username originale).
+     */
+    static final String ATTEMPTED_USERNAME_ATTRIBUTE = "it.govpay.common.auth.attemptedUsername";
+
     private final ObjectMapper objectMapper;
     private final JsonLoginResponseWriter responseWriter;
     private final AuthEventListener eventListener;
@@ -125,6 +135,11 @@ public class JsonUsernamePasswordAuthenticationFilter extends AbstractAuthentica
             return null;
         }
 
+        // Stampa l'username sul request attribute prima del manager: se il
+        // manager solleva AuthenticationException (bad creds / disabled),
+        // unsuccessfulAuthentication ce lo recupera per l'audit
+        // PROFILO_LOGIN_FAILED.
+        request.setAttribute(ATTEMPTED_USERNAME_ATTRIBUTE, body.username());
         UsernamePasswordAuthenticationToken token =
                 UsernamePasswordAuthenticationToken.unauthenticated(body.username(), body.password());
         token.setDetails(detailsContributor.buildDetails(request, AuthType.FORM));
@@ -178,7 +193,7 @@ public class JsonUsernamePasswordAuthenticationFilter extends AbstractAuthentica
     }
 
     private String extractAttemptedUsername(HttpServletRequest request) {
-        Object preset = request.getAttribute("it.govpay.common.auth.attemptedUsername");
+        Object preset = request.getAttribute(ATTEMPTED_USERNAME_ATTRIBUTE);
         return preset instanceof String s ? s : null;
     }
 

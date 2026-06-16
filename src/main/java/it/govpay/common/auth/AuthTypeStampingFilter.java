@@ -7,6 +7,7 @@ import java.util.Objects;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import it.govpay.common.auth.spi.AuthType;
@@ -47,7 +48,11 @@ import jakarta.servlet.http.HttpServletResponse;
  * contemporaneamente):
  * <ol>
  *   <li>Preset esplicito (settato da un filter custom su success) — sempre vince</li>
+ *   <li>{@link JwtAuthenticationToken} nel context → {@link AuthType#OAUTH2}
+ *       (cue forte: tipo di token specifico per resource server JWT)</li>
  *   <li>{@code Authorization: Basic} header → {@link AuthType#BASIC}</li>
+ *   <li>{@code Authorization: Bearer} header → {@link AuthType#OAUTH2}
+ *       (fallback per casi edge: token Bearer custom non-JWT)</li>
  *   <li>Attributo {@code jakarta.servlet.request.X509Certificate} → {@link AuthType#SSL}</li>
  *   <li>Cookie sessione valido → {@link AuthType#FORM}</li>
  * </ol>
@@ -71,6 +76,7 @@ public class AuthTypeStampingFilter extends OncePerRequestFilter {
     public static final String REQUEST_ATTRIBUTE = "it.govpay.common.auth.authType";
 
     private static final String BASIC_PREFIX = "Basic ";
+    private static final String BEARER_PREFIX = "Bearer ";
     private static final String X509_REQUEST_ATTRIBUTE = "jakarta.servlet.request.X509Certificate";
 
     private final GovpayAuthProperties properties;
@@ -89,7 +95,7 @@ public class AuthTypeStampingFilter extends OncePerRequestFilter {
                                     FilterChain filterChain) throws ServletException, IOException {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         if (isAuthenticated(auth) && !(request.getAttribute(REQUEST_ATTRIBUTE) instanceof AuthType)) {
-            AuthType type = detect(request);
+            AuthType type = detect(request, auth);
             if (type != null) {
                 request.setAttribute(REQUEST_ATTRIBUTE, type);
             }
@@ -103,11 +109,23 @@ public class AuthTypeStampingFilter extends OncePerRequestFilter {
                 && !(auth instanceof AnonymousAuthenticationToken);
     }
 
-    private AuthType detect(HttpServletRequest request) {
+    private AuthType detect(HttpServletRequest request, Authentication auth) {
+        // OAUTH2 (cue forte): il BearerTokenAuthenticationFilter di Spring non
+        // self-stamps; pero' il token nel context e' un JwtAuthenticationToken,
+        // che non viene mai prodotto da altri filter della chain. Match diretto.
+        if (auth instanceof JwtAuthenticationToken) {
+            return AuthType.OAUTH2;
+        }
         // BASIC: Authorization header (Spring BasicAuthenticationFilter non self-stamps)
         String authorization = request.getHeader("Authorization");
         if (authorization != null && authorization.regionMatches(true, 0, BASIC_PREFIX, 0, BASIC_PREFIX.length())) {
             return AuthType.BASIC;
+        }
+        // OAUTH2 (fallback): Bearer token custom (non-JWT). Raro in pratica ma
+        // copre setup con resource server non-JWT che non producono
+        // JwtAuthenticationToken.
+        if (authorization != null && authorization.regionMatches(true, 0, BEARER_PREFIX, 0, BEARER_PREFIX.length())) {
+            return AuthType.OAUTH2;
         }
         // SSL: X.509 cert a livello TLS (Spring X509AuthenticationFilter non self-stamps)
         if (request.getAttribute(X509_REQUEST_ATTRIBUTE) instanceof X509Certificate[]) {
