@@ -84,6 +84,12 @@ public class GovpaySecurityFilterChainAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
+    public PrincipalCaptureFilter principalCaptureFilter() {
+        return new PrincipalCaptureFilter();
+    }
+
+    @Bean
+    @ConditionalOnMissingBean
     @ConditionalOnProperty(prefix = "govpay.auth.form", name = "enabled")
     public LoginRateLimiter loginRateLimiter(GovpayAuthProperties properties) {
         GovpayAuthProperties.RateLimit rl = properties.getForm().getRateLimit();
@@ -284,6 +290,7 @@ public class GovpaySecurityFilterChainAutoConfiguration {
             @Qualifier("problemAuthenticationEntryPoint") AuthenticationEntryPoint authenticationEntryPoint,
             AccessDeniedHandler accessDeniedHandler,
             AuthTypeStampingFilter authTypeStampingFilter,
+            PrincipalCaptureFilter principalCaptureFilter,
             ObjectProvider<JsonUsernamePasswordAuthenticationFilter> jsonLoginFilterProvider,
             ObjectProvider<HeaderPreAuthenticationFilter> headerFilterProvider,
             ObjectProvider<SslHeaderPreAuthenticationFilter> sslHeaderFilterProvider,
@@ -344,6 +351,9 @@ public class GovpaySecurityFilterChainAutoConfiguration {
         // fallback a BasicAuthenticationFilter (provider DAO).
         ldapFilterProvider.ifAvailable(f -> http.addFilterBefore(f, BasicAuthenticationFilter.class));
         http.addFilterAfter(authTypeStampingFilter, BasicAuthenticationFilter.class);
+        // PrincipalCaptureFilter va dopo lo stamping, cosi' cattura il principal
+        // anche dopo che eventuali filter custom hanno settato il SecurityContext.
+        http.addFilterAfter(principalCaptureFilter, AuthTypeStampingFilter.class);
 
         return http.build();
     }
