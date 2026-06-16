@@ -11,6 +11,7 @@ package it.govpay.common.auth.spi;
  */
 public enum AuthType {
     BASIC,
+    LDAP,
     FORM,
     SSL,
     SSL_HEADER,

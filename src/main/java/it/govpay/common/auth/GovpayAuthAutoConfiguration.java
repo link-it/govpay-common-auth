@@ -171,4 +171,11 @@ public class GovpayAuthAutoConfiguration {
     public UserDetailsService oauth2UserDetailsService(GovpayPrincipalLoader loader) {
         return new GovpayUserDetailsServiceAdapter(loader, AuthType.OAUTH2);
     }
+
+    @Bean("ldapUserDetailsService")
+    @ConditionalOnBean(GovpayPrincipalLoader.class)
+    @ConditionalOnProperty(prefix = "govpay.auth.ldap", name = "enabled")
+    public UserDetailsService ldapUserDetailsService(GovpayPrincipalLoader loader) {
+        return new GovpayUserDetailsServiceAdapter(loader, AuthType.LDAP);
+    }
 }

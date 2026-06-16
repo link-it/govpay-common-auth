@@ -17,11 +17,20 @@ import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.authentication.ProviderManager;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
+import org.springframework.security.ldap.DefaultSpringSecurityContextSource;
+import org.springframework.security.ldap.authentication.BindAuthenticator;
+import org.springframework.security.ldap.authentication.LdapAuthenticationProvider;
+import org.springframework.security.ldap.search.FilterBasedLdapUserSearch;
+import org.springframework.security.ldap.userdetails.DefaultLdapAuthoritiesPopulator;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.CsrfConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.oauth2.core.OAuth2TokenValidator;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.JwtDecoder;
+import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.AccessDeniedHandler;
@@ -33,12 +42,16 @@ import org.springframework.security.core.userdetails.UserDetailsByNameServiceWra
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
 import org.springframework.security.web.util.matcher.RequestMatcher;
+import org.springframework.web.cors.CorsConfiguration;
+import org.springframework.web.cors.CorsConfigurationSource;
+import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import tools.jackson.databind.ObjectMapper;
 
 import it.govpay.common.auth.spi.AuthEventListener;
 import it.govpay.common.auth.spi.AuthType;
 import it.govpay.common.auth.spi.AuthenticationDetailsContributor;
+import it.govpay.common.auth.spi.AuthenticatedSubject;
 import it.govpay.common.auth.spi.GovpayPrincipalLoader;
 import it.govpay.common.auth.spi.JsonLoginResponseWriter;
 
@@ -142,16 +155,146 @@ public class GovpaySecurityFilterChainAutoConfiguration {
     }
 
     @Bean
+    @ConditionalOnProperty(prefix = "govpay.auth.spid", name = "enabled")
+    public SpidPreAuthenticationFilter spidPreAuthenticationFilter(
+            GovpayAuthProperties properties,
+            AuthenticationDetailsContributor detailsContributor,
+            @Qualifier("spidUserDetailsService") UserDetailsService spidUds) {
+        SpidPreAuthenticationFilter filter = new SpidPreAuthenticationFilter(
+                properties.getSpid().getPrincipalHeaderName(),
+                properties.getSpid().getTinitPrefix());
+        filter.setAuthenticationManager(new ProviderManager(preAuthProvider(spidUds)));
+        filter.setAuthenticationDetailsSource(req -> detailsContributor.buildDetails(req, AuthType.SPID));
+        return filter;
+    }
+
+    @Bean
+    @ConditionalOnProperty(prefix = "govpay.auth.session", name = "enabled")
+    public SessionPreAuthenticationFilter sessionPreAuthenticationFilter(
+            GovpayAuthProperties properties,
+            AuthenticationDetailsContributor detailsContributor,
+            @Qualifier("sessionUserDetailsService") UserDetailsService sessionUds) {
+        SessionPreAuthenticationFilter filter = new SessionPreAuthenticationFilter(
+                properties.getSession().getSessionPrincipalAttributeName());
+        filter.setAuthenticationManager(new ProviderManager(preAuthProvider(sessionUds)));
+        filter.setAuthenticationDetailsSource(req -> detailsContributor.buildDetails(req, AuthType.SESSION));
+        return filter;
+    }
+
+    @Bean
+    @ConditionalOnProperty(prefix = "govpay.auth.ldap", name = "enabled")
+    public LdapAuthenticationFilter ldapAuthenticationFilter(
+            GovpayAuthProperties properties,
+            AuthenticationDetailsContributor detailsContributor,
+            GovpayPrincipalLoader principalLoader) {
+        GovpayAuthProperties.Ldap ldap = properties.getLdap();
+        if (ldap.getUrl() == null || ldap.getUrl().isBlank()) {
+            throw new IllegalStateException("govpay.auth.ldap.enabled=true ma govpay.auth.ldap.url e' assente");
+        }
+        DefaultSpringSecurityContextSource ctxSource = new DefaultSpringSecurityContextSource(ldap.getUrl());
+        if (ldap.getManagerDn() != null && !ldap.getManagerDn().isBlank()) {
+            ctxSource.setUserDn(ldap.getManagerDn());
+            ctxSource.setPassword(ldap.getManagerPassword());
+        }
+        ctxSource.afterPropertiesSet();
+
+        BindAuthenticator bindAuthenticator = new BindAuthenticator(ctxSource);
+        if (ldap.getUserDnPattern() != null && !ldap.getUserDnPattern().isBlank()) {
+            bindAuthenticator.setUserDnPatterns(new String[]{ldap.getUserDnPattern()});
+        }
+        if (ldap.getUserSearchFilter() != null && !ldap.getUserSearchFilter().isBlank()) {
+            FilterBasedLdapUserSearch search = new FilterBasedLdapUserSearch(
+                    ldap.getUserSearchBase() == null ? "" : ldap.getUserSearchBase(),
+                    ldap.getUserSearchFilter(),
+                    ctxSource);
+            bindAuthenticator.setUserSearch(search);
+        }
+
+        DefaultLdapAuthoritiesPopulator authoritiesPopulator = new DefaultLdapAuthoritiesPopulator(
+                ctxSource, ldap.getGroupSearchBase());
+        authoritiesPopulator.setGroupSearchFilter(ldap.getGroupSearchFilter());
+        authoritiesPopulator.setRolePrefix(ldap.getRolePrefix());
+        authoritiesPopulator.setConvertToUpperCase(ldap.isConvertToUpperCase());
+
+        LdapAuthenticationProvider provider = new LdapAuthenticationProvider(bindAuthenticator, authoritiesPopulator);
+        provider.setUserDetailsContextMapper(new GovpayLdapUserDetailsContextMapper(
+                principalLoader, ldap.getRolePrefix(), ldap.isConvertToUpperCase()));
+
+        return new LdapAuthenticationFilter(new ProviderManager(provider), detailsContributor);
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(JwtDecoder.class)
+    @ConditionalOnProperty(prefix = "govpay.auth.oauth2", name = "enabled")
+    public JwtDecoder govpayJwtDecoder(GovpayAuthProperties properties) {
+        GovpayAuthProperties.Oauth2 oauth2 = properties.getOauth2();
+        if (oauth2.getJwkSetUri() == null || oauth2.getJwkSetUri().isBlank()) {
+            throw new IllegalStateException("govpay.auth.oauth2.enabled=true ma govpay.auth.oauth2.jwk-set-uri assente");
+        }
+        NimbusJwtDecoder decoder = NimbusJwtDecoder.withJwkSetUri(oauth2.getJwkSetUri()).build();
+        OAuth2TokenValidator<Jwt> validator = GovpayJwtValidatorFactory.createDefaultWithIssuerAudienceAndClaims(
+                oauth2.getIssuer(), oauth2.getAudience(), oauth2.getClaimValidationRules());
+        decoder.setJwtValidator(validator);
+        return decoder;
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(GovpayJwtAuthenticationConverter.class)
+    @ConditionalOnProperty(prefix = "govpay.auth.oauth2", name = "enabled")
+    public GovpayJwtAuthenticationConverter govpayJwtAuthenticationConverter(
+            GovpayAuthProperties properties,
+            GovpayPrincipalLoader principalLoader) {
+        return new GovpayJwtAuthenticationConverter(principalLoader, properties.getOauth2().getPrincipalClaimName());
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(BearerTokenProblemAuthenticationEntryPoint.class)
+    @ConditionalOnProperty(prefix = "govpay.auth.oauth2", name = "enabled")
+    public BearerTokenProblemAuthenticationEntryPoint bearerTokenProblemAuthenticationEntryPoint(
+            GovpayAuthProperties properties,
+            ObjectMapper objectMapper) {
+        return new BearerTokenProblemAuthenticationEntryPoint(objectMapper, properties.getOauth2().getRealmName());
+    }
+
+    @Bean
+    @ConditionalOnMissingBean(CorsConfigurationSource.class)
+    @ConditionalOnProperty(prefix = "govpay.auth.cors", name = "enabled")
+    public CorsConfigurationSource govpayCorsConfigurationSource(GovpayAuthProperties properties) {
+        GovpayAuthProperties.Cors cors = properties.getCors();
+        CorsConfiguration cfg = new CorsConfiguration();
+        cfg.setAllowCredentials(cors.isAllowCredentials());
+        if (cors.isAllowAllOrigin()) {
+            cfg.addAllowedOriginPattern("*");
+        } else {
+            cfg.setAllowedOrigins(cors.getAllowOrigins());
+        }
+        cfg.setAllowedHeaders(cors.getAllowHeaders());
+        cfg.setAllowedMethods(cors.getAllowMethods());
+        cfg.setExposedHeaders(cors.getExposeHeaders());
+        cfg.setMaxAge(cors.getMaxAgeSeconds());
+        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
+        source.registerCorsConfiguration(cors.getPathPattern(), cfg);
+        return source;
+    }
+
+    @Bean
     @Order(50)
     public SecurityFilterChain govpaySecurityFilterChain(
             HttpSecurity http,
-            AuthenticationEntryPoint authenticationEntryPoint,
+            @Qualifier("problemAuthenticationEntryPoint") AuthenticationEntryPoint authenticationEntryPoint,
             AccessDeniedHandler accessDeniedHandler,
             AuthTypeStampingFilter authTypeStampingFilter,
             ObjectProvider<JsonUsernamePasswordAuthenticationFilter> jsonLoginFilterProvider,
             ObjectProvider<HeaderPreAuthenticationFilter> headerFilterProvider,
             ObjectProvider<SslHeaderPreAuthenticationFilter> sslHeaderFilterProvider,
             ObjectProvider<ApiKeyAuthenticationFilter> apiKeyFilterProvider,
+            ObjectProvider<SpidPreAuthenticationFilter> spidFilterProvider,
+            ObjectProvider<SessionPreAuthenticationFilter> sessionFilterProvider,
+            ObjectProvider<LdapAuthenticationFilter> ldapFilterProvider,
+            ObjectProvider<JwtDecoder> jwtDecoderProvider,
+            ObjectProvider<GovpayJwtAuthenticationConverter> jwtAuthenticationConverterProvider,
+            ObjectProvider<BearerTokenProblemAuthenticationEntryPoint> bearerEntryPointProvider,
+            ObjectProvider<CorsConfigurationSource> corsConfigurationSourceProvider,
             @Qualifier("basicUserDetailsService") ObjectProvider<UserDetailsService> basicUdsProvider,
             @Qualifier("sslUserDetailsService") ObjectProvider<UserDetailsService> sslUdsProvider,
             PasswordEncoder passwordEncoder,
@@ -161,28 +304,84 @@ public class GovpaySecurityFilterChainAutoConfiguration {
 
         GovpayAuthProperties.Form form = properties.getForm();
         boolean formEnabled = form.isEnabled();
+        boolean spidEnabled = properties.getSpid().isEnabled();
+        // Sessione creata IF_REQUIRED solo per FORM e SPID. La chain SESSION
+        // V1 era stateless: legge la sessione esistente, non ne crea.
+        boolean sessionAware = formEnabled || spidEnabled;
 
         http.securityMatcher("/**")
                 .exceptionHandling(eh -> eh
                         .authenticationEntryPoint(authenticationEntryPoint)
-                        .accessDeniedHandler(accessDeniedHandler))
-                .authorizeHttpRequests(a -> a.anyRequest().authenticated());
+                        .accessDeniedHandler(accessDeniedHandler));
 
+        corsConfigurationSourceProvider.ifAvailable(src -> {
+            try {
+                http.cors(c -> c.configurationSource(src));
+            } catch (Exception ex) {
+                throw new IllegalStateException("CORS config failed", ex);
+            }
+        });
+
+        configureAuthorization(http, properties.getPublicChain(), properties.getStaticResources());
         configureHeaders(http, properties.getHeaders());
-        configureSession(http, formEnabled, objectMapper);
-        configureCsrf(http, form, formEnabled);
+        configureSession(http, sessionAware, objectMapper);
+        configureCsrf(http, form, sessionAware);
         configureChainManagerAndBuiltins(http, properties, basicUdsProvider, sslUdsProvider,
                 passwordEncoder, authenticationEntryPoint);
-        configureFormLogout(http, form, formEnabled, eventListener);
+        // Logout abilitato per qualunque metodo session-based (FORM o SPID).
+        configureSessionLogout(http, form, formEnabled || spidEnabled, eventListener);
+        configureOauth2(http, properties.getOauth2(), jwtDecoderProvider, jwtAuthenticationConverterProvider,
+                bearerEntryPointProvider, objectMapper);
 
         // Filter custom della libreria: posizionati prima/dopo Basic per ordine deterministico.
         jsonLoginFilterProvider.ifAvailable(f -> http.addFilterBefore(f, BasicAuthenticationFilter.class));
         apiKeyFilterProvider.ifAvailable(f -> http.addFilterBefore(f, BasicAuthenticationFilter.class));
         headerFilterProvider.ifAvailable(f -> http.addFilterBefore(f, BasicAuthenticationFilter.class));
         sslHeaderFilterProvider.ifAvailable(f -> http.addFilterBefore(f, BasicAuthenticationFilter.class));
+        spidFilterProvider.ifAvailable(f -> http.addFilterBefore(f, BasicAuthenticationFilter.class));
+        sessionFilterProvider.ifAvailable(f -> http.addFilterBefore(f, BasicAuthenticationFilter.class));
+        // LDAP prima di BasicAuth: tenta LDAP-bind, su fallimento lascia il
+        // fallback a BasicAuthenticationFilter (provider DAO).
+        ldapFilterProvider.ifAvailable(f -> http.addFilterBefore(f, BasicAuthenticationFilter.class));
         http.addFilterAfter(authTypeStampingFilter, BasicAuthenticationFilter.class);
 
         return http.build();
+    }
+
+    /**
+     * Configura le regole di autorizzazione:
+     * <ul>
+     *   <li>Static resources (se {@code govpay.auth.static-resources.enabled}) → permitAll;</li>
+     *   <li>Public chain rules (path + opzionalmente metodi HTTP) → permitAll;</li>
+     *   <li>OPTIONS su {@code /**} → permitAll (CORS preflight, V1-aligned);</li>
+     *   <li>{@code anyRequest().authenticated()}.</li>
+     * </ul>
+     */
+    private static void configureAuthorization(HttpSecurity http,
+                                               GovpayAuthProperties.PublicChain publicChain,
+                                               GovpayAuthProperties.StaticResources staticResources) throws Exception {
+        boolean publicEnabled = publicChain.isEnabled();
+        java.util.List<GovpayAuthProperties.PermitAllRule> rules =
+                publicEnabled ? publicChain.getPermitAllPaths() : java.util.List.of();
+        java.util.List<String> staticPaths =
+                staticResources.isEnabled() ? staticResources.getPermitAllPaths() : java.util.List.of();
+        http.authorizeHttpRequests(a -> {
+            // CORS preflight (V1: <intercept-url pattern="/**" access="permitAll" method="OPTIONS"/>).
+            a.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll();
+            for (String path : staticPaths) {
+                a.requestMatchers(path).permitAll();
+            }
+            for (GovpayAuthProperties.PermitAllRule rule : rules) {
+                if (rule.getMethods() == null || rule.getMethods().isEmpty()) {
+                    a.requestMatchers(rule.getPath()).permitAll();
+                } else {
+                    for (String method : rule.getMethods()) {
+                        a.requestMatchers(HttpMethod.valueOf(method.toUpperCase()), rule.getPath()).permitAll();
+                    }
+                }
+            }
+            a.anyRequest().authenticated();
+        });
     }
 
     private static DaoAuthenticationProvider daoProvider(UserDetailsService uds, PasswordEncoder encoder) {
@@ -213,9 +412,9 @@ public class GovpaySecurityFilterChainAutoConfiguration {
     }
 
     private static void configureSession(HttpSecurity http,
-                                         boolean formEnabled,
+                                         boolean sessionAware,
                                          ObjectMapper objectMapper) throws Exception {
-        if (formEnabled) {
+        if (sessionAware) {
             // Replica V1: session invalida / scaduta -> 401 problem+json
             // (NotAuthorizedInvalidSessionStrategy + NotAuthorizedSessionInformationExpiredStrategy).
             ProblemInvalidSessionStrategy invalidSession = new ProblemInvalidSessionStrategy(objectMapper);
@@ -234,8 +433,8 @@ public class GovpaySecurityFilterChainAutoConfiguration {
 
     private static void configureCsrf(HttpSecurity http,
                                       GovpayAuthProperties.Form form,
-                                      boolean formEnabled) throws Exception {
-        if (!formEnabled) {
+                                      boolean sessionAware) throws Exception {
+        if (!sessionAware) {
             http.csrf(CsrfConfigurer::disable);
             return;
         }
@@ -290,11 +489,17 @@ public class GovpaySecurityFilterChainAutoConfiguration {
         }
     }
 
-    private static void configureFormLogout(HttpSecurity http,
-                                            GovpayAuthProperties.Form form,
-                                            boolean formEnabled,
-                                            AuthEventListener eventListener) throws Exception {
-        if (!formEnabled) {
+    /**
+     * Logout per i metodi session-based (FORM e SPID). V1 aveva URL distinte
+     * per chain ({@code /rs/form/v1/logout}, {@code /rs/spid/v1/logout}); V2
+     * chain unica condivide {@code /auth/logout} per tutti i metodi che
+     * gestiscono sessione.
+     */
+    private static void configureSessionLogout(HttpSecurity http,
+                                               GovpayAuthProperties.Form form,
+                                               boolean sessionLogoutEnabled,
+                                               AuthEventListener eventListener) throws Exception {
+        if (!sessionLogoutEnabled) {
             return;
         }
         RequestMatcher logoutMatcher = PathPatternRequestMatcher.withDefaults()
@@ -305,5 +510,42 @@ public class GovpaySecurityFilterChainAutoConfiguration {
                 .deleteCookies("JSESSIONID", form.getCsrfCookieName())
                 .invalidateHttpSession(true)
                 .clearAuthentication(true));
+    }
+
+    /**
+     * Configura OAuth2 Resource Server (JWT) con decoder/validator V1-faithful,
+     * converter SPI-based per il mapping principal → Utenza locale, entry point
+     * problem+json con WWW-Authenticate Bearer, e optional logout handler OIDC.
+     */
+    private static void configureOauth2(HttpSecurity http,
+                                        GovpayAuthProperties.Oauth2 oauth2,
+                                        ObjectProvider<JwtDecoder> jwtDecoderProvider,
+                                        ObjectProvider<GovpayJwtAuthenticationConverter> jwtAuthenticationConverterProvider,
+                                        ObjectProvider<BearerTokenProblemAuthenticationEntryPoint> bearerEntryPointProvider,
+                                        ObjectMapper objectMapper) throws Exception {
+        if (!oauth2.isEnabled()) {
+            return;
+        }
+        JwtDecoder decoder = jwtDecoderProvider.getIfAvailable();
+        GovpayJwtAuthenticationConverter converter = jwtAuthenticationConverterProvider.getIfAvailable();
+        BearerTokenProblemAuthenticationEntryPoint entryPoint = bearerEntryPointProvider.getIfAvailable();
+        if (decoder == null || converter == null || entryPoint == null) {
+            return;
+        }
+        http.oauth2ResourceServer(oauth -> oauth
+                .authenticationEntryPoint(entryPoint)
+                .jwt(jwt -> jwt
+                        .decoder(decoder)
+                        .jwtAuthenticationConverter(converter)));
+        // Logout OAuth2 separato: solo se logoutUri/postLogoutRedirectUri configurati.
+        if (oauth2.getLogoutUri() != null && !oauth2.getLogoutUri().isBlank()
+                && oauth2.getPostLogoutRedirectUri() != null && !oauth2.getPostLogoutRedirectUri().isBlank()) {
+            RequestMatcher matcher = PathPatternRequestMatcher.withDefaults()
+                    .matcher(HttpMethod.POST, oauth2.getLogoutPath());
+            http.logout(l -> l
+                    .logoutRequestMatcher(matcher)
+                    .logoutSuccessHandler(new Oauth2LogoutSuccessHandler(
+                            oauth2.getLogoutUri(), oauth2.getPostLogoutRedirectUri(), objectMapper)));
+        }
     }
 }
