@@ -75,5 +75,6 @@ public class SessionPreAuthenticationFilter extends AbstractPreAuthenticatedProc
                                             Authentication authResult) throws java.io.IOException, ServletException {
         super.successfulAuthentication(request, response, authResult);
         request.setAttribute(AuthTypeStampingFilter.REQUEST_ATTRIBUTE, AuthType.SESSION);
+        request.setAttribute(AuthTypeStampingFilter.REQUEST_ATTRIBUTE_PRINCIPAL, authResult.getName());
     }
 }

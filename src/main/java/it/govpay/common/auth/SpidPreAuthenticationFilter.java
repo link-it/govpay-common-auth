@@ -90,5 +90,6 @@ public class SpidPreAuthenticationFilter extends AbstractPreAuthenticatedProcess
                                             Authentication authResult) throws java.io.IOException, ServletException {
         super.successfulAuthentication(request, response, authResult);
         request.setAttribute(AuthTypeStampingFilter.REQUEST_ATTRIBUTE, AuthType.SPID);
+        request.setAttribute(AuthTypeStampingFilter.REQUEST_ATTRIBUTE_PRINCIPAL, authResult.getName());
     }
 }

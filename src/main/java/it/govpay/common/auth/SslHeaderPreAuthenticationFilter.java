@@ -16,7 +16,6 @@ import org.springframework.security.web.authentication.preauth.AbstractPreAuthen
 
 import it.govpay.common.auth.spi.AuthType;
 
-import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -133,6 +132,7 @@ public class SslHeaderPreAuthenticationFilter extends AbstractPreAuthenticatedPr
                                             Authentication authResult) throws java.io.IOException, ServletException {
         super.successfulAuthentication(request, response, authResult);
         request.setAttribute(AuthTypeStampingFilter.REQUEST_ATTRIBUTE, AuthType.SSL_HEADER);
+        request.setAttribute(AuthTypeStampingFilter.REQUEST_ATTRIBUTE_PRINCIPAL, authResult.getName());
     }
 
     /**

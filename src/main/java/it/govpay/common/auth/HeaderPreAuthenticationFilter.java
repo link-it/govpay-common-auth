@@ -24,9 +24,16 @@ import jakarta.servlet.http.HttpServletResponse;
  * presente → principal {@code null} → la chain salta questo filter senza
  * lanciare eccezioni.
  *
- * <p>Marca esplicitamente {@link AuthType#HEADER} sull'attributo della
- * request dopo authentication success, cosi' {@link AuthTypeStampingFilter}
- * non deve indovinare dal solo cue header.
+ * <p><b>Self-stamping di {@link AuthType#HEADER}</b> in
+ * {@code successfulAuthentication}: necessario per il caso
+ * "HEADER + Basic stesso user". Spring {@link AbstractPreAuthenticatedProcessingFilter}
+ * chiama {@code successfulAuthentication} <b>solo</b> se ha agito
+ * (i.e. {@code requiresAuthentication=true}: context vuoto o
+ * {@code checkForPrincipalChanges=true}), quindi il self-stamp marca solo i
+ * cicli "ho effettivamente autenticato". I cicli skippati (es. session
+ * preauth gia' nel context per lo stesso principal) non self-stampano e
+ * l'{@link AuthTypeStampingFilter} cade sui fallback corretti
+ * (session attribute persisted / cue cookie sessione).
  */
 public class HeaderPreAuthenticationFilter extends AbstractPreAuthenticatedProcessingFilter {
 
@@ -62,5 +69,6 @@ public class HeaderPreAuthenticationFilter extends AbstractPreAuthenticatedProce
                                             Authentication authResult) throws java.io.IOException, jakarta.servlet.ServletException {
         super.successfulAuthentication(request, response, authResult);
         request.setAttribute(AuthTypeStampingFilter.REQUEST_ATTRIBUTE, AuthType.HEADER);
+        request.setAttribute(AuthTypeStampingFilter.REQUEST_ATTRIBUTE_PRINCIPAL, authResult.getName());
     }
 }

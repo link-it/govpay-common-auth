@@ -122,7 +122,7 @@ class JsonUsernamePasswordAuthenticationFilterTest {
     }
 
     @Test
-    void rateLimitedRequestNotifiesListenerWithoutPrincipal() throws Exception {
+    void rateLimitedRequestNotifiesListenerWithAttemptedPrincipal() throws Exception {
         when(rateLimiter.tryAcquire(anyString())).thenReturn(false);
 
         MockHttpServletRequest request = postLogin("alice", "wrong");
@@ -130,10 +130,35 @@ class JsonUsernamePasswordAuthenticationFilterTest {
 
         filter.doFilter(request, response, new MockFilterChain());
 
+        // RATE_LIMITED arriva DOPO il parsing del body: il listener riceve lo
+        // username tentato (non null), cosi' il consumer puo' tracciare
+        // PROFILO_LOGIN_FAILED motivo=RATE_LIMITED per principal noti (vedi
+        // contratto openapi.yaml /auth/login response 429).
         verify(eventListener).onLoginFailed(
-                eq(null), eq(AuthType.FORM), eq(FailureReason.RATE_LIMITED), eq(request));
+                eq("alice"), eq(AuthType.FORM), eq(FailureReason.RATE_LIMITED), eq(request));
         verifyNoInteractions(authenticationManager);
         assertThat(response.getStatus()).isEqualTo(429);
+    }
+
+    @Test
+    void rateLimitedRequestWithMalformedBodyNotifiesWithNullPrincipal() throws Exception {
+        // Body malformato → BAD_CREDENTIALS notificato con principal=null
+        // (non possiamo estrarre username); il rate-limit non viene neppure
+        // valutato perche' il body parsing fallisce prima. Documenta che il
+        // 400 ha priorita' sul 429 quando il body non e' parsabile.
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/auth/login");
+        request.setServletPath("/auth/login");
+        request.setRequestURI("/auth/login");
+        request.setContentType("application/json");
+        request.setContent("not-json".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        request.setRemoteAddr("127.0.0.1");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        filter.doFilter(request, response, new MockFilterChain());
+
+        verify(eventListener).onLoginFailed(
+                eq(null), eq(AuthType.FORM), eq(FailureReason.BAD_CREDENTIALS), eq(request));
+        assertThat(response.getStatus()).isEqualTo(400);
     }
 
     private MockHttpServletRequest postLogin(String username, String password) {

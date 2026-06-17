@@ -133,6 +133,35 @@
                 </configuration>
             </plugin>
 
+            <!-- Espone le dipendenze come property ${groupId:artifactId:type}.
+                 Surefire usa la sintassi sotto per agganciare ByteBuddy come
+                 -javaagent senza hard-codare il path. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>properties</id>
+                        <goals>
+                            <goal>properties</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- Mockito mock-maker inline richiede ByteBuddy come agent.
+                 Su JDK 25+ il self-attach genera un warning e sara'
+                 disabilitato by-default; in ambienti CI con
+                 `-XX:-EnableDynamicAgentLoading` fallisce gia' oggi.
+                 @{argLine} preserva l'argLine di JaCoCo prepare-agent. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <argLine>@{argLine} -javaagent:${net.bytebuddy:byte-buddy-agent:jar}</argLine>
+                </configuration>
+            </plugin>
+
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-source-plugin</artifactId>

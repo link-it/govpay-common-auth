@@ -106,14 +106,12 @@ public class JsonUsernamePasswordAuthenticationFilter extends AbstractAuthentica
     public Authentication attemptAuthentication(HttpServletRequest request, HttpServletResponse response)
             throws AuthenticationException, IOException, ServletException {
         String ip = clientIp(request);
-        if (!rateLimiter.tryAcquire(ip)) {
-            eventListener.onLoginFailed(null, AuthType.FORM, FailureReason.RATE_LIMITED, request);
-            writeProblem(response, HttpStatus.TOO_MANY_REQUESTS,
-                    "Troppi tentativi di login. Riprovare piu' tardi.",
-                    URI.create(request.getRequestURI()));
-            return null;
-        }
 
+        // Parsing del body PRIMA del rate-limit check, cosi' RATE_LIMITED puo'
+        // notificare il listener con il principal tentato (e il consumer puo'
+        // scrivere PROFILO_LOGIN_FAILED in audit anche per RATE_LIMITED). Il
+        // costo extra del parsing JSON e' trascurabile rispetto alla protezione
+        // DoS (il container limita gia' la body size).
         JsonLoginRequest body;
         try {
             body = objectMapper.readValue(request.getInputStream(), JsonLoginRequest.class);
@@ -131,6 +129,14 @@ public class JsonUsernamePasswordAuthenticationFilter extends AbstractAuthentica
                     AuthType.FORM, FailureReason.BAD_CREDENTIALS, request);
             writeProblem(response, HttpStatus.BAD_REQUEST,
                     "Campi 'username' e 'password' obbligatori.",
+                    URI.create(request.getRequestURI()));
+            return null;
+        }
+
+        if (!rateLimiter.tryAcquire(ip)) {
+            eventListener.onLoginFailed(body.username(), AuthType.FORM, FailureReason.RATE_LIMITED, request);
+            writeProblem(response, HttpStatus.TOO_MANY_REQUESTS,
+                    "Troppi tentativi di login. Riprovare piu' tardi.",
                     URI.create(request.getRequestURI()));
             return null;
         }
@@ -154,6 +160,20 @@ public class JsonUsernamePasswordAuthenticationFilter extends AbstractAuthentica
         super.successfulAuthentication(request, response, chain, authResult);
         rateLimiter.reset(clientIp(request));
         request.setAttribute(AuthTypeStampingFilter.REQUEST_ATTRIBUTE, AuthType.FORM);
+        request.setAttribute(AuthTypeStampingFilter.REQUEST_ATTRIBUTE_PRINCIPAL, authResult.getName());
+        // Persisti la coppia (AuthType, principal) in sessione: sulle richieste
+        // successive il SecurityContext viene caricato dal
+        // HttpSessionSecurityContextRepository senza che alcun filter custom
+        // ri-autentichi. L'AuthTypeStampingFilter, trovando questo attributo
+        // in sessione e verificandone la coerenza col principal corrente,
+        // ritorna FORM invece di cadere su un eventuale cue ambiguo (es.
+        // Authorization: Basic <stesso user> che Spring BasicAuthFilter
+        // skippa con `authenticationIsRequired=false`).
+        jakarta.servlet.http.HttpSession session = request.getSession(false);
+        if (session != null) {
+            session.setAttribute(AuthTypeStampingFilter.SESSION_ATTRIBUTE, AuthType.FORM);
+            session.setAttribute(AuthTypeStampingFilter.SESSION_ATTRIBUTE_PRINCIPAL, authResult.getName());
+        }
         // Forza la materializzazione del CSRF token (lazy: CsrfFilter mette in
         // request attribute un SupplierCsrfToken, ma la persistenza in cookie
         // avviene solo al primo getToken()). Cosi' il frontend riceve

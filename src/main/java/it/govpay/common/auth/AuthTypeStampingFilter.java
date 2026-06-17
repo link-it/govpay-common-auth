@@ -24,49 +24,56 @@ import jakarta.servlet.http.HttpServletResponse;
  * ({@value #REQUEST_ATTRIBUTE}) e puo' essere letto dai controller via
  * {@link AuthTypeAccessor}.
  *
- * <p>Replica concettualmente il pattern V1 in cui ciascuna chain valorizzava
- * {@code utenza.autenticazione} con il proprio {@code authType}: qui la
- * "stampatura" e' centralizzata in un unico filter che riconosce il cue della
- * request, con due percorsi possibili:
+ * <p>La stampatura segue un pattern hybrid che combina <b>self-stamping
+ * dei filter custom</b> e <b>detection dai cue della request</b>:
  *
+ * <ul>
+ *   <li><b>Self-stamping</b>: i filter custom della libreria che hanno
+ *       autenticato (ApiKey, Header, SslHeader, Spid, Session, Ldap,
+ *       JsonLogin) marcano sulla request la coppia
+ *       {@code (AuthType, principal)} via {@link #REQUEST_ATTRIBUTE} +
+ *       {@link #REQUEST_ATTRIBUTE_PRINCIPAL}. JsonLogin persiste la
+ *       coppia anche su {@code HttpSession} ({@link #SESSION_ATTRIBUTE} +
+ *       {@link #SESSION_ATTRIBUTE_PRINCIPAL}), cosi' le request
+ *       successive con cookie sessione attivo onorano il marker.</li>
+ *   <li><b>Detection</b>: per i filter built-in di Spring
+ *       ({@code BasicAuthenticationFilter}, {@code X509AuthenticationFilter},
+ *       {@code BearerTokenAuthenticationFilter}) che non possono
+ *       self-stampare, l'{@link AuthType} viene derivato dai cue della
+ *       request.</li>
+ * </ul>
+ *
+ * <p><b>Coerenza preset / principal</b>: ogni marker viene confrontato
+ * con il principal corrente del {@code SecurityContext}. Se un filter
+ * downstream sovrascrive il context con un principal diverso, il marker
+ * precedente diventa "stale" e viene scartato — lo stamping ripiega sui
+ * cue, riflettendo il metodo effettivamente attivo.
+ *
+ * <p><b>Ordine di rilevamento</b> nel detect:
  * <ol>
- *   <li><b>Self-stamping</b>: i filter custom della libreria che hanno auth
- *       success (JsonLogin → FORM, ApiKey → API_KEY, Header → HEADER,
- *       SslHeader → SSL_HEADER) annotano l'attributo direttamente nel loro
- *       {@code successfulAuthentication}. Quando lo stamping filter scorre
- *       la request trova gia' l'attributo settato e lo lascia inalterato.
- *       Questo evita falsi positivi sui filter pre-auth (es. header presente
- *       ma authentication fallita → no stamping).</li>
- *   <li><b>Detection</b> (fallback): per i filter built-in di Spring Security
- *       ({@code BasicAuthenticationFilter}, {@code X509AuthenticationFilter})
- *       che non controlliamo, lo stamping filter deriva l'{@link AuthType}
- *       dal cue della request (header {@code Authorization: Basic},
- *       attributo {@code jakarta.servlet.request.X509Certificate}).</li>
+ *   <li>Preset request coerente col principal corrente → quello vince.</li>
+ *   <li>{@link JwtAuthenticationToken} nel context → {@link AuthType#OAUTH2}.</li>
+ *   <li>Session attribute coerente col principal corrente → quello vince.</li>
+ *   <li>{@code Authorization: Basic} → {@link AuthType#BASIC}
+ *       (copre anche LDAP, che usa Basic come trasporto).</li>
+ *   <li>{@code Authorization: Bearer} → {@link AuthType#OAUTH2}
+ *       (fallback per token Bearer custom non-JWT).</li>
+ *   <li>Attributo {@code jakarta.servlet.request.X509Certificate} →
+ *       {@link AuthType#SSL}.</li>
+ *   <li>API key headers configurati → {@link AuthType#API_KEY}.</li>
+ *   <li>HEADER pre-auth configurati → {@link AuthType#HEADER}.</li>
+ *   <li>SSL_HEADER configurato → {@link AuthType#SSL_HEADER}.</li>
+ *   <li>SPID header configurato → {@link AuthType#SPID}.</li>
+ *   <li>Attributo {@code HttpSession} SESSION configurato →
+ *       {@link AuthType#SESSION}.</li>
+ *   <li>Cookie sessione valido → {@link AuthType#FORM}.</li>
  * </ol>
  *
- * <p><b>Ordine di rilevamento</b> nel fallback (in caso di piu' cue presenti
- * contemporaneamente):
- * <ol>
- *   <li>Preset esplicito (settato da un filter custom su success) — sempre vince</li>
- *   <li>{@link JwtAuthenticationToken} nel context → {@link AuthType#OAUTH2}
- *       (cue forte: tipo di token specifico per resource server JWT)</li>
- *   <li>{@code Authorization: Basic} header → {@link AuthType#BASIC}</li>
- *   <li>{@code Authorization: Bearer} header → {@link AuthType#OAUTH2}
- *       (fallback per casi edge: token Bearer custom non-JWT)</li>
- *   <li>Attributo {@code jakarta.servlet.request.X509Certificate} → {@link AuthType#SSL}</li>
- *   <li>Cookie sessione valido → {@link AuthType#FORM}</li>
- * </ol>
- *
- * <p>Per HEADER, SSL_HEADER, API_KEY il detection fallback verifica la
- * presenza dell'header configurato come decisione last-resort, ma in
- * pratica self-stamping ha sempre la precedenza.
- *
- * <p><b>Decisione su SSL vs SSL_HEADER coesistenti</b>: la presenza
- * dell'attributo X.509 (TLS terminata in Tomcat con clientAuth) ha precedenza
- * sulla presenza dell'header SSL_HEADER (TLS terminata upstream). Edge case
- * teorico: tunneling esotico dove entrambi sono presenti — in pratica nessun
- * deploy reale lo realizza, e l'evidence "backend ha verificato direttamente
- * la mTLS" e' piu' autorevole.
+ * <p><b>SSL vs SSL_HEADER coesistenti</b>: la presenza dell'attributo
+ * X.509 (TLS terminata in Tomcat con clientAuth) ha precedenza sulla
+ * presenza dell'header SSL_HEADER (TLS terminata upstream). In pratica
+ * non c'e' deploy che li compresenta, e l'evidenza "backend ha verificato
+ * direttamente la mTLS" e' piu' autorevole del cue header.
  */
 public class AuthTypeStampingFilter extends OncePerRequestFilter {
 
@@ -74,6 +81,28 @@ public class AuthTypeStampingFilter extends OncePerRequestFilter {
      * Nome dell'attributo della request che porta il {@link AuthType} riconosciuto.
      */
     public static final String REQUEST_ATTRIBUTE = "it.govpay.common.auth.authType";
+
+    /**
+     * Principal "ufficiale" del marker request: usato per invalidare il preset
+     * quando un filter downstream sovrascrive il {@code SecurityContext} con un
+     * principal diverso (es. {@code ApiKey: apikey-id} → {@code BasicAuth: alice}).
+     * Se il principal corrente non coincide con questo marker, il preset e'
+     * stale e il detect cade sui cue della request.
+     */
+    public static final String REQUEST_ATTRIBUTE_PRINCIPAL = "it.govpay.common.auth.authType.principal";
+
+    /**
+     * Nome dell'attributo della {@link jakarta.servlet.http.HttpSession} che
+     * porta l'{@link AuthType} con cui la sessione e' stata inizialmente
+     * autenticata. Usato sulle request successive al login session-based
+     * (FORM) per ritornare l'AuthType corretto invece di cadere su un cue
+     * potenzialmente ingannevole (es. {@code Authorization: Basic <stesso user>}
+     * che {@code BasicAuthenticationFilter} skippa con {@code authenticationIsRequired=false}).
+     */
+    public static final String SESSION_ATTRIBUTE = "it.govpay.common.auth.authType";
+
+    /** Principal del marker session — stesso pattern di {@link #REQUEST_ATTRIBUTE_PRINCIPAL}. */
+    public static final String SESSION_ATTRIBUTE_PRINCIPAL = "it.govpay.common.auth.authType.principal";
 
     private static final String BASIC_PREFIX = "Basic ";
     private static final String BEARER_PREFIX = "Bearer ";
@@ -94,10 +123,19 @@ public class AuthTypeStampingFilter extends OncePerRequestFilter {
                                     HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        if (isAuthenticated(auth) && !(request.getAttribute(REQUEST_ATTRIBUTE) instanceof AuthType)) {
+        if (isAuthenticated(auth)) {
+            // Sempre re-detect: un eventuale preset request potrebbe essere
+            // stale (filter custom ha autenticato un principal, ma un filter
+            // downstream lo ha sovrascritto). Il detect verifica la
+            // coerenza preset/principal e cade sui cue se serve.
             AuthType type = detect(request, auth);
             if (type != null) {
                 request.setAttribute(REQUEST_ATTRIBUTE, type);
+                request.setAttribute(REQUEST_ATTRIBUTE_PRINCIPAL, auth.getName());
+            } else {
+                // Preset stale e nessun cue valido: pulisci marker spuri
+                request.removeAttribute(REQUEST_ATTRIBUTE);
+                request.removeAttribute(REQUEST_ATTRIBUTE_PRINCIPAL);
             }
         }
         filterChain.doFilter(request, response);
@@ -110,11 +148,33 @@ public class AuthTypeStampingFilter extends OncePerRequestFilter {
     }
 
     private AuthType detect(HttpServletRequest request, Authentication auth) {
-        // OAUTH2 (cue forte): il BearerTokenAuthenticationFilter di Spring non
-        // self-stamps; pero' il token nel context e' un JwtAuthenticationToken,
-        // che non viene mai prodotto da altri filter della chain. Match diretto.
+        String currentPrincipal = auth.getName();
+
+        // 1. Preset request coerente: un filter custom (ApiKey/Header/...) ha
+        //    self-stampato e il principal corrente coincide → quello vince.
+        if (request.getAttribute(REQUEST_ATTRIBUTE) instanceof AuthType presetType) {
+            Object presetPrincipal = request.getAttribute(REQUEST_ATTRIBUTE_PRINCIPAL);
+            if (java.util.Objects.equals(presetPrincipal, currentPrincipal)) {
+                return presetType;
+            }
+            // Preset stale (filter downstream ha sovrascritto): cade ai cue.
+        }
+
+        // 2. OAUTH2 (cue forte): JwtAuthenticationToken nel context.
         if (auth instanceof JwtAuthenticationToken) {
             return AuthType.OAUTH2;
+        }
+
+        // 3. Session attribute persisted coerente: copre le request
+        //    successive in cui SecurityContext viene caricato dalla session
+        //    senza che alcun filter custom ri-autentichi (es. FORM su request
+        //    successiva, anche se sulla stessa request arriva Authorization:
+        //    Basic <stesso user> che BasicAuthFilter skippa).
+        jakarta.servlet.http.HttpSession session = request.getSession(false);
+        if (session != null
+                && session.getAttribute(SESSION_ATTRIBUTE) instanceof AuthType sessionType
+                && java.util.Objects.equals(session.getAttribute(SESSION_ATTRIBUTE_PRINCIPAL), currentPrincipal)) {
+            return sessionType;
         }
         // BASIC: Authorization header (Spring BasicAuthenticationFilter non self-stamps)
         String authorization = request.getHeader("Authorization");
@@ -150,6 +210,22 @@ public class AuthTypeStampingFilter extends OncePerRequestFilter {
         if (properties.getSslHeader().isEnabled()
                 && request.getHeader(properties.getSslHeader().getPrincipalHeaderName()) != null) {
             return AuthType.SSL_HEADER;
+        }
+        // SPID: header dedicato configurato (proxy SAML/SPID che inietta il
+        // codice fiscale del cittadino autenticato)
+        if (properties.getSpid().isEnabled()
+                && properties.getSpid().getPrincipalHeaderName() != null
+                && request.getHeader(properties.getSpid().getPrincipalHeaderName()) != null) {
+            return AuthType.SPID;
+        }
+        // SESSION: attributo HttpSession popolato da componente esterno (es.
+        // un controller di login proprietario che ha salvato il principal).
+        // Precede il fallback FORM, che si limita a riconoscere "sessione valida".
+        jakarta.servlet.http.HttpSession existingSession = request.getSession(false);
+        if (existingSession != null
+                && properties.getSession().isEnabled()
+                && existingSession.getAttribute(properties.getSession().getSessionPrincipalAttributeName()) != null) {
+            return AuthType.SESSION;
         }
         // FORM: cookie sessione valido
         if (request.getRequestedSessionId() != null && request.isRequestedSessionIdValid()) {

@@ -32,12 +32,15 @@ import jakarta.servlet.http.HttpServletResponse;
  * V1 era mutuamente esclusivo con {@code BASIC_GOVPAY_PROVIDER} (operatore
  * sceglieva uno o l'altro). V2 chain unica permette la coesistenza: questo
  * filter viene posizionato prima di {@code BasicAuthenticationFilter}. Se
- * LDAP autentica → context settato, marca {@link AuthType#LDAP}. Se LDAP
- * fallisce → context pulito, {@code BasicAuthenticationFilter} di Spring
- * fa il fallback verso il provider DAO (se {@code govpay.auth.basic.enabled}).
+ * LDAP autentica → context settato. Se LDAP fallisce → context pulito,
+ * {@code BasicAuthenticationFilter} di Spring fa il fallback verso il
+ * provider DAO (se {@code govpay.auth.basic.enabled}).
  *
- * <p>Niente self-stamping su fallimento: il filter passa "trasparente"
- * lasciando i filter successivi tentare.
+ * <p>Self-stamping di {@link AuthType#LDAP} solo nel branch di successo:
+ * marca esplicitamente l'audit lato server (utile per distinguere
+ * "Basic locale" da "Basic + LDAP-bind"). Se il filter non agisce
+ * (header mancante, bind fallito) lascia il fallback dello stamping
+ * filter, che senza marker ricade su {@link AuthType#BASIC} (cue header).
  */
 public class LdapAuthenticationFilter extends OncePerRequestFilter {
 
@@ -74,7 +77,12 @@ public class LdapAuthenticationFilter extends OncePerRequestFilter {
             SecurityContext context = SecurityContextHolder.createEmptyContext();
             context.setAuthentication(authResult);
             SecurityContextHolder.setContext(context);
+            // Self-stamp LDAP: il filter ha bound-ato contro LDAP con successo.
+            // Distinguere LDAP vs BASIC locale e' utile lato audit/log (V1
+            // pattern). Il client invia Authorization: Basic, ma lo stamping
+            // riporta LDAP perche' quel provider ha autenticato.
             request.setAttribute(AuthTypeStampingFilter.REQUEST_ATTRIBUTE, AuthType.LDAP);
+            request.setAttribute(AuthTypeStampingFilter.REQUEST_ATTRIBUTE_PRINCIPAL, authResult.getName());
         } catch (UsernameNotFoundException ex) {
             // Utenza non risolvibile localmente dopo LDAP-bind ok → fallisce esplicitamente.
             log.debug("LDAP bind ok ma utenza non risolvibile localmente per principal {}",
