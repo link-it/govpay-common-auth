@@ -56,10 +56,10 @@ jobs:
             || echo '000')"
           echo "NVD ha risposto: HTTP $HTTP_CODE"
           if [ "$HTTP_CODE" = "200" ]; then
-            echo "available=true" >> "$GITHUB_OUTPUT"
+            echo "NVD disponibile, procedo con l'update."
           else
-            echo "available=false" >> "$GITHUB_OUTPUT"
-            echo "::warning::NVD non disponibile (HTTP $HTTP_CODE) - update saltato, la cache esistente resta valida."
+            echo "::error::NVD non disponibile (HTTP $HTTP_CODE) - update non eseguito, la cache esistente resta valida."
+            exit 1
           fi
 
       - name: Install OWASP Dependency-Check CLI
