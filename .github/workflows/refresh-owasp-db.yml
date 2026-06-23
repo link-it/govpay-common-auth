@@ -46,9 +46,12 @@ jobs:
 
       - name: Check NVD API availability
         id: nvd_check
+        env:
+          NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
         run: |
-          echo "Verifico disponibilità endpoint NVD..."
+          echo "Verifico disponibilità endpoint NVD (con API key)..."
           HTTP_CODE="$(curl -s -o /dev/null -w '%{http_code}' -m 30 \
+            -H "apiKey: ${NVD_API_KEY}" \
             'https://services.nvd.nist.gov/rest/json/cves/2.0?resultsPerPage=1' \
             || echo '000')"
           echo "NVD ha risposto: HTTP $HTTP_CODE"
