@@ -1,14 +1,12 @@
 name: Refresh OWASP Dependency-Check DB
 
-# Aggiorna il DB NVD ogni notte così la pipeline principale
-# trova sempre una cache calda e non scarica mai il DB completo.
 on:
   schedule:
-    - cron: '0 3 * * *'  # ogni notte alle 03:00 UTC
-  workflow_dispatch:      # avvio manuale (utile al primo setup o dopo una cache eviction)
+    - cron: '0 3 * * *'
+  workflow_dispatch:
 
 permissions:
-  actions: write  # necessario per scrivere la cache cross-workflow
+  actions: write
 
 jobs:
   refresh-owasp-db:
@@ -42,13 +40,27 @@ jobs:
         uses: actions/cache@v5
         with:
           path: .dependency-check/data
-          # La chiave include la versione del plugin: bump del plugin -> cache invalidata
-          # (lo schema del DB cambia tra release maggiori/minori).
           key: ${{ runner.os }}-owasp-v${{ steps.owasp.outputs.version }}-${{ steps.date.outputs.date }}
           restore-keys: |
             ${{ runner.os }}-owasp-v${{ steps.owasp.outputs.version }}-
 
+      - name: Check NVD API availability
+        id: nvd_check
+        run: |
+          echo "Verifico disponibilità endpoint NVD..."
+          HTTP_CODE="$(curl -s -o /dev/null -w '%{http_code}' -m 30 \
+            'https://services.nvd.nist.gov/rest/json/cves/2.0?resultsPerPage=1' \
+            || echo '000')"
+          echo "NVD ha risposto: HTTP $HTTP_CODE"
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::NVD non disponibile (HTTP $HTTP_CODE) - update saltato, la cache esistente resta valida."
+          fi
+
       - name: Install OWASP Dependency-Check CLI
+        if: steps.nvd_check.outputs.available == 'true'
         run: |
           VERSION="${{ steps.owasp.outputs.version }}"
           curl -sSL "https://github.com/dependency-check/DependencyCheck/releases/download/v${VERSION}/dependency-check-${VERSION}-release.zip" \
@@ -57,6 +69,7 @@ jobs:
           echo "$PWD/dependency-check/bin" >> $GITHUB_PATH
 
       - name: Update NVD DB only (no scan)
+        if: steps.nvd_check.outputs.available == 'true'
         env:
           NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
         run: |
@@ -66,6 +79,8 @@ jobs:
             --nvdApiKey "$NVD_API_KEY"
 
       - name: Report cache status
+        if: always()
         run: |
+          echo "NVD disponibile: ${{ steps.nvd_check.outputs.available }}"
           echo "Cache hit on today's key: ${{ steps.owasp-cache.outputs.cache-hit }}"
           echo "DB size: $(du -sh .dependency-check/data 2>/dev/null || echo 'n/a')"
