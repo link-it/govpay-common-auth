@@ -31,9 +31,7 @@ jobs:
     runs-on: ubuntu-latest
 
     # Tetto massimo di durata del job (minuti). Il default di GitHub è 360.
-    # NB: questo va per forza qui come valore letterale — il contesto `env`
-    # non è disponibile su `timeout-minutes`, quindi è l'unico knob fuori dal pannello sopra.
-    timeout-minutes: 90
+    timeout-minutes: 360
 
     permissions:
       contents: read
