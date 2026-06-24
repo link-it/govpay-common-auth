@@ -8,9 +8,33 @@ on:
 permissions:
   actions: write
 
+# ────────────────────────────────────────────────────────────
+#  PANNELLO DI TUNING — modifica qui, non dentro gli step
+# ────────────────────────────────────────────────────────────
+env:
+  # Ritentativi per ogni richiesta all'API NVD prima di arrendersi.
+  # Alzato a 30: assorbe i 503/524 intermittenti tipici della ripresa NVD.
+  NVD_MAX_RETRY_COUNT: "30"
+
+  # Pausa (ms) tra una richiesta NVD e la successiva.
+  # Più alto = più gentile con NVD (meno 524), ma job più lento.
+  # Metti "0" per disattivare la pausa e usare il default della CLI.
+  NVD_API_DELAY: "4000"
+
+  # Timeout (secondi) del solo colpo di preflight (curl -m).
+  # Copre anche il caso 524/hang: oltre questo, preflight = fallito.
+  NVD_PREFLIGHT_TIMEOUT: "30"
+# ────────────────────────────────────────────────────────────
+
 jobs:
   refresh-owasp-db:
     runs-on: ubuntu-latest
+
+    # Tetto massimo di durata del job (minuti). Il default di GitHub è 360.
+    # NB: questo va per forza qui come valore letterale — il contesto `env`
+    # non è disponibile su `timeout-minutes`, quindi è l'unico knob fuori dal pannello sopra.
+    timeout-minutes: 90
+
     permissions:
       contents: read
       actions: write
@@ -50,7 +74,7 @@ jobs:
           NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
         run: |
           echo "Verifico disponibilità endpoint NVD (con API key)..."
-          HTTP_CODE="$(curl -s -o /dev/null -w '%{http_code}' -m 30 \
+          HTTP_CODE="$(curl -s -o /dev/null -w '%{http_code}' -m "${NVD_PREFLIGHT_TIMEOUT}" \
             -H "apiKey: ${NVD_API_KEY}" \
             'https://services.nvd.nist.gov/rest/json/cves/2.0?resultsPerPage=1' \
             || echo '000')"
@@ -63,7 +87,6 @@ jobs:
           fi
 
       - name: Install OWASP Dependency-Check CLI
-        if: steps.nvd_check.outputs.available == 'true'
         run: |
           VERSION="${{ steps.owasp.outputs.version }}"
           curl -sSL "https://github.com/dependency-check/DependencyCheck/releases/download/v${VERSION}/dependency-check-${VERSION}-release.zip" \
@@ -72,18 +95,19 @@ jobs:
           echo "$PWD/dependency-check/bin" >> $GITHUB_PATH
 
       - name: Update NVD DB only (no scan)
-        if: steps.nvd_check.outputs.available == 'true'
         env:
           NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
         run: |
+          echo "Tuning: retry=${NVD_MAX_RETRY_COUNT}, delay=${NVD_API_DELAY}ms"
           dependency-check.sh \
             --updateonly \
             --data .dependency-check/data \
-            --nvdApiKey "$NVD_API_KEY"
+            --nvdApiKey "$NVD_API_KEY" \
+            --nvdMaxRetryCount "$NVD_MAX_RETRY_COUNT" \
+            --nvdApiDelay "$NVD_API_DELAY"
 
       - name: Report cache status
         if: always()
         run: |
-          echo "NVD disponibile: ${{ steps.nvd_check.outputs.available }}"
           echo "Cache hit on today's key: ${{ steps.owasp-cache.outputs.cache-hit }}"
           echo "DB size: $(du -sh .dependency-check/data 2>/dev/null || echo 'n/a')"
