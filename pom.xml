@@ -49,11 +49,47 @@
     </properties>
 
     <dependencies>
-        <!-- NB: dipendenze di base / placeholder. Aggiungere qui le dipendenze
-             effettive della libreria di autorizzazione (es. spring-security). -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter</artifactId>
+        </dependency>
+
+        <!-- Spring Security: provider, filter chain, web entry point/handler -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-security</artifactId>
+        </dependency>
+
+        <!-- Spring Security LDAP: provider per autenticazione LDAP (BASIC_LDAP_PROVIDER) -->
+        <dependency>
+            <groupId>org.springframework.security</groupId>
+            <artifactId>spring-security-ldap</artifactId>
+        </dependency>
+
+        <!-- Spring Security OAuth2 Resource Server: JWT bearer token (OAUTH2_PKCE) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
+        </dependency>
+
+        <!-- Jackson 3 (problem+json serialization). I consumer hanno gia' un ObjectMapper. -->
+        <dependency>
+            <groupId>tools.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+        </dependency>
+
+        <!-- SHA-512/MD5 Unix crypt per GovpayPasswordEncoder -->
+        <dependency>
+            <groupId>commons-codec</groupId>
+            <artifactId>commons-codec</artifactId>
+        </dependency>
+
+        <!-- Servlet API: HttpServletRequest/Response usati dalla SPI e dagli
+             entry point. provided: il consumer porta il container. -->
+        <dependency>
+            <groupId>jakarta.servlet</groupId>
+            <artifactId>jakarta.servlet-api</artifactId>
+            <scope>provided</scope>
         </dependency>
 
         <dependency>
@@ -94,6 +130,35 @@
                             <artifactId>lombok</artifactId>
                         </exclude>
                     </excludes>
+                </configuration>
+            </plugin>
+
+            <!-- Espone le dipendenze come property ${groupId:artifactId:type}.
+                 Surefire usa la sintassi sotto per agganciare ByteBuddy come
+                 -javaagent senza hard-codare il path. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>properties</id>
+                        <goals>
+                            <goal>properties</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- Mockito mock-maker inline richiede ByteBuddy come agent.
+                 Su JDK 25+ il self-attach genera un warning e sara'
+                 disabilitato by-default; in ambienti CI con
+                 `-XX:-EnableDynamicAgentLoading` fallisce gia' oggi.
+                 @{argLine} preserva l'argLine di JaCoCo prepare-agent. -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <argLine>@{argLine} -javaagent:${net.bytebuddy:byte-buddy-agent:jar}</argLine>
                 </configuration>
             </plugin>
 
