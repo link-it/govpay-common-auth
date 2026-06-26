@@ -18,33 +18,22 @@ import jakarta.servlet.http.HttpServletResponse;
  * shibboleth-proxy) ha gia' autenticato l'utente upstream e propaga
  * l'identita' via header HTTP.
  *
- * <p>Porting V1 fedele di {@code it.govpay.rs.v1.authentication.preauth.filter.SPIDPreAuthFilter}:
- * legge il principal dall'header configurato; se il valore inizia con il
+ * <p>Legge il principal dall'header configurato; se il valore inizia con il
  * prefisso convenzionale {@code TINIT-} (Tipo Identificativo Naturale ITaliano),
  * strippa il prefisso per ottenere il codice fiscale puro.
  *
  * <p>Esempio: header valorizzato {@code TINIT-RSSMRA80A01H501Z} → principal
  * {@code RSSMRA80A01H501Z}.
  *
- * <p><b>Attributi SPID nel details</b>: V1 aveva {@code SPIDAuthenticationDetailsSource}
- * che catturava una lista configurabile di header SPID
- * (property {@code it.govpay.autenticazioneSPID.headers.*}) nei
- * {@code Authentication.details}. I 15 header standard documentati in V1
- * sono: {@code spidCode}, {@code name}, {@code familyName},
- * {@code placeOfBirth}, {@code dateOfBirth}, {@code gender},
- * {@code companyName}, {@code registeredOffice}, {@code fiscalNumber},
- * {@code ivaCode}, {@code idCard}, {@code mobilePhone}, {@code email},
- * {@code address}, {@code digitalAddress}. In V2 questa cattura e' demandata
+ * <p><b>Attributi SPID nel details</b>: Cattura di header SPID e' demandata
  * al consumer tramite {@link it.govpay.common.auth.spi.AuthenticationDetailsContributor}:
  * il consumer registra un proprio bean che ispeziona la request e ritorna
  * un details object con i campi che gli interessano.
  *
- * <p><b>CSRF su SPID</b>: V1 disabilitava CSRF su tutte le chain (inclusa SPID).
- * V2 chain unica abilita CSRF condizionalmente (cookie sessione presente +
- * no Authorization header). Dopo login SPID, le request successive
+ * <p><b>CSRF su SPID</b>: Chain unica abilita CSRF condizionalmente (cookie sessione 
+ * presente + no Authorization header). Dopo login SPID, le request successive
  * portano cookie sessione → CSRF richiesto. Il frontend SPID deve gestire
- * il token {@code X-XSRF-TOKEN} come per FORM. Divergenza esplicita V2
- * coerente con il redesign CSRF di issue link-it/govpay-console-api#10.
+ * il token {@code X-XSRF-TOKEN} come per FORM.
  */
 public class SpidPreAuthenticationFilter extends AbstractPreAuthenticatedProcessingFilter {
 

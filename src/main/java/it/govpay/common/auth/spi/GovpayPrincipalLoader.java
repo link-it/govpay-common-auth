@@ -5,7 +5,7 @@ package it.govpay.common.auth.spi;
  * tipo di autenticazione applicato) sul corrispondente {@link AuthenticatedSubject}.
  *
  * <p>La libreria common-auth non sa come il consumer persiste le utenze: ogni
- * consumer (govpay-console-api, govpay-portal-api, futuri WAR V2) implementa
+ * consumer (govpay-console-api, govpay-portal-api, etc) implementa
  * un singolo {@code @Component} di questo tipo che interroga il proprio
  * data layer (JPA, LDAP, in-memory, ...).
  *
@@ -24,8 +24,7 @@ public interface GovpayPrincipalLoader {
      * @param authType  tipo di autenticazione che la chain ha applicato.
      *                  Permette al consumer di differenziare il lookup
      *                  (es. SSL legge dal campo {@code subject} invece che
-     *                  {@code principal}) cosi' come V1 differenziava via
-     *                  property {@code authType} sul bean DAO.
+     *                  {@code principal}).
      * @return i dati dell'utenza autenticabile, oppure {@code null} se non
      *         esiste un'utenza con quel principal.
      */

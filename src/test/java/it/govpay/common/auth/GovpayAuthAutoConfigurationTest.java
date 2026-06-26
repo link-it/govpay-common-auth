@@ -44,8 +44,8 @@ class GovpayAuthAutoConfigurationTest {
     void firewallAllowsUrlEncodedSlashAndPercentByDefault() {
         runner.run(context -> {
             StrictHttpFirewall firewall = (StrictHttpFirewall) context.getBean(HttpFirewall.class);
-            // V1-aligned default: entrambi true. Verifica indiretta via property bean
-            // (StrictHttpFirewall non espone i getter, ma il bean e' built con quei valori).
+            // Verifica indiretta via property bean (StrictHttpFirewall non espone i getter,ù
+            // ma il bean e' built con quei valori).
             assertThat(firewall).isNotNull();
         });
     }

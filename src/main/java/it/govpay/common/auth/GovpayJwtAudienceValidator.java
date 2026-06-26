@@ -17,8 +17,7 @@ import org.springframework.util.Assert;
 /**
  * Validator per il claim {@code aud} del JWT.
  *
- * <p>Porting V1 fedele di {@code GovPayJwtAudienceValidator}: gestisce
- * {@code aud} come stringa singola, {@code Collection}, o array.
+ * <p>Gestisce {@code aud} come stringa singola, {@code Collection}, o array.
  * Audience null/empty disabilita il check.
  */
 public class GovpayJwtAudienceValidator implements OAuth2TokenValidator<Jwt> {

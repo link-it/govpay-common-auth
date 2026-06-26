@@ -20,10 +20,6 @@ import it.govpay.common.auth.spi.GovpayPrincipalLoader;
  * (per metodi password-based) o in un
  * {@link org.springframework.security.core.userdetails.UserDetailsByNameServiceWrapper}
  * (per metodi pre-auth).
- *
- * <p>Replica il pattern V1 in cui il bean {@code AutenticazioneUtenzeRegistrateDAO}
- * veniva istanziato N volte con property {@code authType} diverse
- * ({@code BASIC}, {@code SSL}, {@code FORM}, ...).
  */
 public class GovpayUserDetailsServiceAdapter implements UserDetailsService {
 

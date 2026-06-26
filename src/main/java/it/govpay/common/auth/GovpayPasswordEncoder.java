@@ -9,13 +9,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 /**
- * {@link PasswordEncoder} coerente con la cifratura usata da GovPay V1
+ * {@link PasswordEncoder} coerente con la cifratura usata da GovPay
  * (SHA-512 Unix crypt, {@code $6$<salt>$<hash>}).
- *
- * <p>V1 implementa l'algoritmo via {@code it.govpay.core.utils.CryptoUtils};
- * questa classe re-implementa lo stesso schema senza dipendere da
- * {@code govpay-core}, in modo da poter essere riusata da qualunque
- * consumer (govpay-console-api, govpay-portal-api, ...).
  *
  * <p>In lettura supporta anche il formato legacy MD5 Unix crypt
  * ({@code $1$<salt>$<hash>}) come fallback, controllato dal flag passato al

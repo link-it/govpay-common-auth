@@ -14,8 +14,7 @@ import org.springframework.util.Assert;
 /**
  * Validator per il claim {@code iss} del JWT.
  *
- * <p>Porting V1 fedele di {@code it.govpay.rs.v1.authentication.oauth2.server.jwt.GovPayJwtIssuerValidator}:
- * se {@code issuer} e' null/empty il check e' disabilitato (success); altrimenti
+ * <p>Se {@code issuer} e' null/empty il check e' disabilitato (success); altrimenti
  * il claim {@code iss} deve essere esattamente uguale al valore configurato.
  */
 public class GovpayJwtIssuerValidator implements OAuth2TokenValidator<Jwt> {

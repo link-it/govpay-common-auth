@@ -17,8 +17,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
 /**
- * Replica V1 di {@code NotAuthorizedSessionInformationExpiredStrategy}:
- * quando Spring Security rileva che una sessione e' stata espulsa per
+ * Quando Spring Security rileva che una sessione e' stata espulsa per
  * concurrency-control (es. nuovo login dello stesso utente con
  * {@code maximumSessions=N}), emette {@code 401 application/problem+json}
  * con detail "Sessione Scaduta".

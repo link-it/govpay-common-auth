@@ -30,9 +30,7 @@ import it.govpay.common.auth.spi.GovpayPrincipalLoader;
  *       password (verifica gia' avvenuta lato LDAP).</li>
  * </ol>
  *
- * <p>Porting V1 di {@code it.govpay.rs.v1.authentication.ldap.mapper.GovPayLdapUserDetailsMapper}
- * (che usava {@code BaseAutenticazioneDAO.loadUserByLdapUserDetail}); in V2
- * la responsabilita' di mappare il principal LDAP all'utenza locale e'
+ * <p>La responsabilita' di mappare il principal LDAP all'utenza locale e'
  * demandata al consumer tramite SPI.
  */
 public class GovpayLdapUserDetailsContextMapper implements UserDetailsContextMapper {

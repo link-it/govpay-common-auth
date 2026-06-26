@@ -75,8 +75,7 @@ public class GovpayAuthAutoConfiguration {
 
     /**
      * Default per {@link AuthenticationDetailsContributor}: delega a
-     * {@code WebAuthenticationDetailsSource} di Spring (equivalente al
-     * comportamento V1 sui metodi BASIC/FORM/SSL). Il consumer puo'
+     * {@code WebAuthenticationDetailsSource} di Spring. Il consumer puo'
      * sostituirlo con un proprio bean per catturare header custom,
      * attributi SPID, ecc.
      */
@@ -88,7 +87,7 @@ public class GovpayAuthAutoConfiguration {
 
     /**
      * {@link HttpFirewall} configurato con le property
-     * {@code govpay.auth.firewall.*}. Default V1: {@code allowUrlEncodedSlash=true}
+     * {@code govpay.auth.firewall.*}. {@code allowUrlEncodedSlash=true}
      * e {@code allowUrlEncodedPercent=true} per accettare identificativi
      * pagopa che contengono {@code /} o {@code %} URL-encoded nel path.
      *

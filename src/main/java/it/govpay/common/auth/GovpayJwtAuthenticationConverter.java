@@ -24,17 +24,13 @@ import it.govpay.common.auth.spi.GovpayPrincipalLoader;
  * Converte un {@link Jwt} validato in un {@link JwtAuthenticationToken}
  * pronto da mettere nel SecurityContext.
  *
- * <p>Porting V1 di {@code GovPayJwtAuthenticationConverter}: estrae il
- * principal dal claim configurato (V1 supporta CSV per fallback, V2
- * idem), recupera le authority "intrinseche" del JWT via
- * {@link JwtGrantedAuthoritiesConverter} e risolve l'utenza locale via SPI
- * {@link GovpayPrincipalLoader} con {@link AuthType#OAUTH2}; le authority
+ * <p>Estrae il principal dal claim configurato (recupera le authority "intrinseche"
+ * del JWT via {@link JwtGrantedAuthoritiesConverter} e risolve l'utenza locale via
+ * SPI {@link GovpayPrincipalLoader} con {@link AuthType#OAUTH2}; le authority
  * locali vengono unite a quelle estratte dal token. Il principal del token
- * finale e' il valore del claim, non un wrapper LDAP come in V1.
+ * finale e' il valore del claim.
  *
- * <p>Divergenza esplicita rispetto a V1: V1 wrappava il Jwt in
- * {@code GovPayLdapJwt} per portare {@code Utenza}/{@code Applicazione}/
- * {@code Operatore} downstream. In V2 questi dati sono accessibili al
+ * <p>{@code Utenza}/{@code Applicazione}/{@code Operatore} sono accessibili al
  * consumer via il proprio data layer (per principal noto) o via
  * {@link it.govpay.common.auth.spi.AuthenticationDetailsContributor}.
  */
@@ -57,7 +53,7 @@ public class GovpayJwtAuthenticationConverter implements Converter<Jwt, Abstract
     public AbstractAuthenticationToken convert(Jwt jwt) {
         Collection<GrantedAuthority> jwtAuthorities = authoritiesConverter.convert(jwt);
 
-        // V1: supporto CSV per fallback claim name (es. "preferred_username,sub")
+        // supporto CSV per fallback claim name (es. "preferred_username,sub")
         String principalValue = null;
         for (String claimName : principalClaimName.split(",")) {
             principalValue = jwt.getClaimAsString(claimName.trim());

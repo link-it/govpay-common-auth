@@ -13,8 +13,7 @@ import org.springframework.security.oauth2.jwt.JwtTimestampValidator;
 /**
  * Factory per costruire validator JWT compositi.
  *
- * <p>Porting V1 fedele di {@code GovPayJwtValidators}: replica i 4 metodi
- * factory di V1 ({@code createDefaultWithIssuerAndAudience},
+ * <p>4 metodi factory ({@code createDefaultWithIssuerAndAudience},
  * {@code createDefaultWithIssuerAudienceAndClaims},
  * {@code createDefaultWithClaims}, {@code createWithCustomValidators}). Tutti
  * i validator costruiti includono sempre {@link JwtTimestampValidator}.

@@ -10,12 +10,6 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 /**
  * Configurazione della libreria common-auth, prefisso {@code govpay.auth.*}.
  *
- * <p>Layout incrementale: in questo step (#2) sono definiti solo i flag di
- * abilitazione per ciascun {@link it.govpay.common.auth.spi.AuthType} e la
- * configurazione dell'encoder di password. Le sub-property specifiche di
- * ciascun metodo (path-pattern, rate-limit, login/logout URL, ...) vengono
- * aggiunte negli step successivi quando il filter corrispondente viene
- * portato dalla V1.
  */
 @ConfigurationProperties("govpay.auth")
 public class GovpayAuthProperties {
@@ -199,7 +193,7 @@ public class GovpayAuthProperties {
 
         /**
          * Regex applicata al subject del certificato per estrarne il principal.
-         * Default V1: l'intero subject DN come principal.
+         * L'intero subject DN come principal.
          */
         private String subjectPrincipalRegex = "^(.*)$";
 
@@ -216,16 +210,14 @@ public class GovpayAuthProperties {
      * Configurazione del metodo HEADER (principal in header HTTP, tipico di
      * reverse proxy che ha gia' autenticato l'utente a monte).
      *
-     * <p>V1-aligned: la property e' una lista di nomi header. Il filter
-     * itera in ordine, prende il valore del primo header non-vuoto presente
-     * sulla request.
+     * <p>La property e' una lista di nomi header. Il filter itera in ordine,
+     * prende il valore del primo header non-vuoto presente sulla request.
      */
     public static class Header extends Method {
 
         /**
          * Nomi degli header da consultare in ordine. Il primo non-null/non-blank
-         * fornisce il principal. Replica V1 {@code getAutenticazioneHeaderNomeHeaderPrincipal()}
-         * che ritornava una {@code List<String>}.
+         * fornisce il principal.
          */
         private List<String> principalHeaderNames = new ArrayList<>(List.of("X-Pre-Auth-User"));
 
@@ -242,11 +234,10 @@ public class GovpayAuthProperties {
      * Configurazione del metodo SSL_HEADER (certificato client SSL inoltrato
      * via header da reverse proxy / API gateway).
      *
-     * <p>Replica fedelmente la pipeline V1 di {@code SSLHeaderPreAuthFilter}:
-     * replace caratteri (per gestire i caratteri di escape introdotti dai
+     * <p>Replace caratteri (per gestire i caratteri di escape introdotti dai
      * proxy come {@code \t} al posto di {@code \n}) + try-fallback decoding
      * (URL → Base64 → Hex) + parsing X.509 + estrazione subject DN in formato
-     * RFC 2253 (= {@code X500Principal.toString()}, identico a V1).
+     * RFC 2253 (= {@code X500Principal.toString()}).
      */
     public static class SslHeader extends Method {
 
@@ -261,7 +252,6 @@ public class GovpayAuthProperties {
 
         /**
          * Se true, hex-decodifica il contenuto dell'header prima di parsarlo.
-         * Replica per fedelta' V1, dove il branch hex era opzionale ma supportato.
          */
         private boolean hexDecode = false;
 
@@ -274,14 +264,14 @@ public class GovpayAuthProperties {
         private boolean replaceCharactersEnabled = false;
 
         /**
-         * Carattere/i da sostituire nel body PEM. Default V1: {@code \t} (tab).
+         * Carattere/i da sostituire nel body PEM.
          * Le stringhe letterali {@code \t}, {@code \r}, {@code \n}, {@code \r\n},
-         * {@code \s} vengono tradotte nel rispettivo carattere reale (compat V1).
+         * {@code \s} vengono tradotte nel rispettivo carattere reale.
          */
         private String replaceSource;
 
         /**
-         * Carattere/i di destinazione. Default V1: {@code \n} (newline).
+         * Carattere/i di destinazione. {@code \n} (newline).
          * Stesso trattamento delle stringhe letterali di {@code replaceSource}.
          */
         private String replaceDest;
@@ -404,8 +394,7 @@ public class GovpayAuthProperties {
      * Configurazione del metodo LDAP (verifica credenziali Basic Auth via
      * server LDAP esterno, mapping a Utenza locale via SPI).
      *
-     * <p>Porting V1 della sezione {@code BASIC_LDAP_PROVIDER} dello security
-     * XML. Tutte le property sono obbligatorie quando LDAP e' abilitato
+     * <p>Tutte le property sono obbligatorie quando LDAP e' abilitato
      * (salvo {@code managerDn}/{@code managerPassword}, opzionali se l'utente
      * puo' fare bind diretto).
      */
@@ -472,8 +461,7 @@ public class GovpayAuthProperties {
      * Configurazione del metodo OAUTH2 (resource server JWT, autorizzazione
      * delegata a Identity Provider esterno).
      *
-     * <p>Porting V1 di {@code OAUTH2_PKCE} dello security XML. Il token
-     * Bearer viene decodificato via {@code NimbusJwtDecoder} (JWK Set URI
+     * <p>Il token Bearer viene decodificato via {@code NimbusJwtDecoder} (JWK Set URI
      * configurabile), validato tramite issuer / audience / claim custom, e
      * il principal viene risolto via SPI {@link it.govpay.common.auth.spi.GovpayPrincipalLoader}
      * con {@link it.govpay.common.auth.spi.AuthType#OAUTH2}.
@@ -497,7 +485,7 @@ public class GovpayAuthProperties {
 
         /**
          * Regole di validazione su claim aggiuntivi: key = nome claim,
-         * value = lista di valori ammessi. Replica V1 {@code oauth2ClaimValidationRules}.
+         * value = lista di valori ammessi.
          */
         private Map<String, List<String>> claimValidationRules = new HashMap<>();
 
@@ -537,8 +525,7 @@ public class GovpayAuthProperties {
     }
 
     /**
-     * Configurazione CORS V2 modernizzata. Sostituisce {@code OriginFilter}
-     * di V1 (che si appoggiava a openspcoop2 {@code AbstractCORSFilter}) con
+     * Configurazione CORS modernizzata con
      * {@code CorsConfigurationSource} di Spring nativo.
      *
      * <p>Property con prefisso {@code govpay.auth.cors.*}. Quando
@@ -596,10 +583,7 @@ public class GovpayAuthProperties {
     /**
      * Configurazione default per le risorse statiche.
      *
-     * <p>V1 catch-all chain permitteva esplicitamente {@code /index.html},
-     * {@code /*.png}, {@code /*.css}, {@code /*.js}, ecc. per servire
-     * Swagger UI dello stesso WAR. V2 librerizza il pattern: quando
-     * {@code enabled=true}, i path elencati sono permitAll automatici.
+     * <p>quando {@code enabled=true}, i path elencati sono permitAll automatici.
      */
     public static class StaticResources {
 
@@ -630,7 +614,7 @@ public class GovpayAuthProperties {
     public static class Spid extends Method {
 
         /**
-         * Nome dell'header che porta il principal SPID. V1 obbligatorio
+         * Nome dell'header che porta il principal SPID. Obbligatorio
          * (property {@code it.govpay.autenticazioneSPID.nomeHeaderPrincipal}),
          * nessun default convenzionale. Se SPID e' abilitato e questo valore
          * e' null/blank, il bean del filter fallisce in costruzione.
@@ -639,7 +623,7 @@ public class GovpayAuthProperties {
 
         /**
          * Prefisso convenzionale del valore dell'header da strippare per
-         * ottenere il codice fiscale puro. Default V1: {@code "TINIT-"}.
+         * ottenere il codice fiscale puro. Default: {@code "TINIT-"}.
          * Impostare a stringa vuota per disabilitare lo strip.
          */
         private String tinitPrefix = "TINIT-";
@@ -670,7 +654,7 @@ public class GovpayAuthProperties {
 
         /**
          * Nome dell'attributo della sessione che porta il principal.
-         * Default V1: {@code "GP_PRINCIPAL"} (costante
+         * Default: {@code "GP_PRINCIPAL"} (costante
          * {@code AuthorizationManager.SESSION_PRINCIPAL_ATTRIBUTE_NAME}).
          */
         private String sessionPrincipalAttributeName = "GP_PRINCIPAL";
@@ -688,9 +672,7 @@ public class GovpayAuthProperties {
      * Configurazione della chain PUBLIC (anonymous + permitAll su path
      * specifici).
      *
-     * <p>In V1 era una chain separata {@code /rs/public/v1/**} con
-     * {@code AnonymousAuthenticationFilter} + {@code intercept-url permitAll}
-     * sui path consentiti. In V2 chain unica: i path elencati qui sono
+     * <p>Chain unica: i path elencati qui sono
      * esentati dal {@code authenticated()} globale.
      */
     public static class PublicChain extends Method {
@@ -700,16 +682,10 @@ public class GovpayAuthProperties {
          * vuota: il consumer la riempie con i propri endpoint
          * (es. {@code /info}, {@code /actuator/health/liveness}).
          *
-         * <p>V1-aligned: replica {@code <intercept-url pattern="..." method="GET"/>}
+         * <p>Replica {@code <intercept-url pattern="..." method="GET"/>}
          * tramite {@link PermitAllRule#methods}.
          *
-         * <p><b>Anonymous principal V1 non portato</b>: V1 estendeva
-         * {@code AnonymousAuthenticationFilter} di Spring con un nome
-         * specifico {@code "GovPay_API_Backoffice_Utenza_Anonima"} e caricava
-         * il principal da {@code AutenticazioneUtenzeAnonimeDAO} (utenza
-         * anonima con apiName=API_PAGAMONTO, authType=PUBLIC). Questa logica
-         * dipende dal data layer del consumer (V1: tabella utenze locale) e
-         * V2 la demanda al consumer tramite il proprio
+         * <p><b>Anonymous principal</b>: demandato al consumer tramite il proprio
          * {@code @Component AnonymousAuthenticationFilter} custom se serve.
          * La libreria si limita a permitAll dei path elencati; il principal
          * anonimo resta quello di default di Spring ({@code "anonymousUser"}
@@ -755,10 +731,7 @@ public class GovpayAuthProperties {
     /**
      * Configurazione degli header HTTP di sicurezza sulle response della chain.
      *
-     * <p>Default V2-modern: tutti abilitati (Spring Security 7 default).
-     * V1 li disabilitava esplicitamente su tutte le chain attive
-     * ({@code basic}, {@code ssl}, {@code form}): chi vuole rispettare V1 al
-     * 100% imposta i tre flag a {@code false}.
+     * <p>Default: tutti abilitati (Spring Security 7 default).
      */
     public static class Headers {
 
@@ -799,17 +772,14 @@ public class GovpayAuthProperties {
     /**
      * Configurazione di {@code StrictHttpFirewall} di Spring Security.
      *
-     * <p>Default V1-aligned: {@code allowUrlEncodedSlash=true},
+     * <p>Default: {@code allowUrlEncodedSlash=true},
      * {@code allowUrlEncodedPercent=true}. Necessario per gli identificativi
      * pagopa che contengono {@code /} (e quindi {@code %2F} encoded) nei
      * path REST.
      */
     public static class Firewall {
 
-        /** Replica V1: {@code allowUrlEncodedSlash="true"}. */
         private boolean allowUrlEncodedSlash = true;
-
-        /** Replica V1: {@code allowUrlEncodedPercent="true"}. */
         private boolean allowUrlEncodedPercent = true;
 
         public boolean isAllowUrlEncodedSlash() {

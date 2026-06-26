@@ -17,10 +17,9 @@ import jakarta.servlet.http.HttpServletResponse;
  * proxy che ha gia' autenticato l'utente upstream e propaga il suo
  * identificativo (es. CN del cert, e-mail, username) via header.
  *
- * <p>Porting V1 fedele di {@code it.govpay.rs.v1.authentication.preauth.filter.HeaderPreAuthFilter}:
- * accetta una {@code List<String>} di nomi header, itera in ordine e ritorna
+ * <p>Accetta una {@code List<String>} di nomi header, itera in ordine e ritorna
  * il valore del primo non-null. Replica anche
- * {@code exceptionIfHeaderMissing=false} (default V1): nessun header
+ * {@code exceptionIfHeaderMissing=false} (default): nessun header
  * presente → principal {@code null} → la chain salta questo filter senza
  * lanciare eccezioni.
  *

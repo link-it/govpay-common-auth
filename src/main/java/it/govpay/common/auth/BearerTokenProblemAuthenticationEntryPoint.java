@@ -29,12 +29,10 @@ import jakarta.servlet.http.HttpServletResponse;
  *   <li>header {@code WWW-Authenticate: Bearer ...} con eventuali parametri
  *       {@code realm}, {@code error}, {@code error_description},
  *       {@code error_uri}, {@code scope} (RFC 6750);</li>
- *   <li>body {@code application/problem+json} V2-modern (sostituisce il
- *       fault JSON V1 di {@code AbstractBasicAuthenticationEntryPoint.fillResponse}).</li>
+ *   <li>body {@code application/problem+json}.</li>
  * </ul>
  *
- * <p>Porting V1 di {@code BearerTokenAuthenticationEntryPoint}: stessa logica
- * di WWW-Authenticate header, body normalizzato a problem+json.
+ * <p>stessa logica di WWW-Authenticate header, body normalizzato a problem+json.
  */
 public class BearerTokenProblemAuthenticationEntryPoint implements AuthenticationEntryPoint {
 

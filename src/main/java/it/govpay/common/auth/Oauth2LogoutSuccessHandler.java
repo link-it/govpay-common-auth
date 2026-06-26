@@ -25,13 +25,12 @@ import jakarta.servlet.http.HttpServletResponse;
  * e {@code id_token_hint} se presente in query) e lo ritorna nel body JSON
  * {@code {"logoutUrl":"..."}}.
  *
- * <p>Porting V1 di {@code CustomOAuth2LogoutSuccessHandler}. Se
- * {@code logoutUri} o {@code postLogoutRedirectUri} non sono configurati,
+ * <p>Se {@code logoutUri} o {@code postLogoutRedirectUri} non sono configurati,
  * il handler emette {@code 204 No Content} senza body.
  */
 public class Oauth2LogoutSuccessHandler implements LogoutSuccessHandler {
 
-    /** Parametro V1 dal quale leggere {@code id_token_hint}. */
+    /** Parametro dal quale leggere {@code id_token_hint}. */
     public static final String PARAM_ID_TOKEN_HINT = "id_token_hint";
 
     private static final Logger log = LoggerFactory.getLogger(Oauth2LogoutSuccessHandler.class);

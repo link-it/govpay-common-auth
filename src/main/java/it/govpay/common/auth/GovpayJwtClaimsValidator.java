@@ -21,9 +21,8 @@ import org.springframework.util.Assert;
  * Validator generico per claim multipli del JWT con lista di valori ammessi
  * per ciascun claim.
  *
- * <p>Porting V1 fedele di {@code GovPayJwtClaimsValidator}: la mappa
- * vuota disabilita la validazione; per ciascuna regola il claim deve essere
- * presente nel token e match contro almeno uno dei valori attesi
+ * <p>La mappa vuota disabilita la validazione; per ciascuna regola il claim deve
+ * essere presente nel token e match contro almeno uno dei valori attesi
  * (gestisce String, Collection, array).
  */
 public class GovpayJwtClaimsValidator implements OAuth2TokenValidator<Jwt> {

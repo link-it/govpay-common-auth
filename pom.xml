@@ -60,13 +60,13 @@
             <artifactId>spring-boot-starter-security</artifactId>
         </dependency>
 
-        <!-- Spring Security LDAP: provider per autenticazione LDAP (porting V1 BASIC_LDAP_PROVIDER) -->
+        <!-- Spring Security LDAP: provider per autenticazione LDAP (BASIC_LDAP_PROVIDER) -->
         <dependency>
             <groupId>org.springframework.security</groupId>
             <artifactId>spring-security-ldap</artifactId>
         </dependency>
 
-        <!-- Spring Security OAuth2 Resource Server: JWT bearer token (porting V1 OAUTH2_PKCE) -->
+        <!-- Spring Security OAuth2 Resource Server: JWT bearer token (OAUTH2_PKCE) -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
@@ -78,7 +78,7 @@
             <artifactId>jackson-databind</artifactId>
         </dependency>
 
-        <!-- SHA-512/MD5 Unix crypt per GovpayPasswordEncoder (allineato V1) -->
+        <!-- SHA-512/MD5 Unix crypt per GovpayPasswordEncoder -->
         <dependency>
             <groupId>commons-codec</groupId>
             <artifactId>commons-codec</artifactId>

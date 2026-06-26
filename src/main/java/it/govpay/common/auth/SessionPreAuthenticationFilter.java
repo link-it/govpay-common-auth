@@ -18,24 +18,17 @@ import jakarta.servlet.http.HttpSession;
  * Filter pre-auth che legge il principal da un attributo della
  * {@link HttpSession} corrente.
  *
- * <p>Porting V1 fedele di {@code it.govpay.rs.v1.authentication.preauth.filter.SessionPrincipalExtractorPreAuthFilter}:
- * scenario in cui un altro componente upstream (es. SAML/SPID handler
+ * <p>Scenario in cui un altro componente upstream (es. SAML/SPID handler
  * proprietario, o un controller di login dedicato) ha popolato la sessione
- * con il principal autenticato in un attributo noto (V1: {@code "GP_PRINCIPAL"}).
+ * con il principal autenticato in un attributo noto.
  * Le request successive presentano il cookie sessione; questo filter ne
  * estrae il principal senza ricorrere a una nuova autenticazione.
  *
  * <p>Se la sessione non esiste o l'attributo e' assente, il filter ritorna
  * {@code null} → la chain salta senza errori.
  *
- * <p><b>Note V1 non portate</b>: V1 definisce due costanti correlate
- * ({@code SESSION_PRINCIPAL_ATTRIBUTE_NAME = "GP_PRINCIPAL"} e
- * {@code SESSION_PRINCIPAL_OBJECT_ATTRIBUTE_NAME = "GP_PRINCIPAL_OBJECT"}). Il
- * filter V1 legge solo {@code GP_PRINCIPAL}; la seconda costante esiste ma
- * il suo uso downstream non e' chiaro (probabilmente porta l'utenza gia'
- * risolta come oggetto Java, per saltare il re-lookup via UDS). V2 al
- * momento legge solo {@code GP_PRINCIPAL} e ricorre comunque alla UDS via
- * {@code sessionUserDetailsService}. Se in futuro emerge un caso d'uso per
+ * <p><b>Note</b>: al momento legge solo {@code GP_PRINCIPAL} e ricorre comunque alla
+ * UDS via {@code sessionUserDetailsService}. Se in futuro emerge un caso d'uso per
  * il bypass del lookup, esponiamo una property dedicata.
  */
 public class SessionPreAuthenticationFilter extends AbstractPreAuthenticatedProcessingFilter {

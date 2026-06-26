@@ -15,13 +15,11 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
 /**
- * Replica V1 di {@code NotAuthorizedInvalidSessionStrategy}: quando Spring
- * Security rileva una sessione invalida (es. JSESSIONID inesistente o
+ * Quando Spring Security rileva una sessione invalida (es. JSESSIONID inesistente o
  * appartenente a un'altra sessione), emette {@code 401 application/problem+json}
  * con detail "Sessione Scaduta", invece del redirect di default.
  *
- * <p>Allineato al pattern problem+json di common-auth, sostituisce il
- * {@code CodiceEccezione.AUTENTICAZIONE.toFaultResponse} di V1 con
+ * <p>Allineato al pattern problem+json di common-auth con
  * {@link ProblemDetail} di Spring 7.
  */
 public class ProblemInvalidSessionStrategy implements InvalidSessionStrategy {

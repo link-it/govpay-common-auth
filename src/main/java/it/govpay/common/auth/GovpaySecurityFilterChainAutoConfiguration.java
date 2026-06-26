@@ -318,8 +318,7 @@ public class GovpaySecurityFilterChainAutoConfiguration {
         GovpayAuthProperties.Form form = properties.getForm();
         boolean formEnabled = form.isEnabled();
         boolean spidEnabled = properties.getSpid().isEnabled();
-        // Sessione creata IF_REQUIRED solo per FORM e SPID. La chain SESSION
-        // V1 era stateless: legge la sessione esistente, non ne crea.
+        // Sessione creata IF_REQUIRED solo per FORM e SPID.
         boolean sessionAware = formEnabled || spidEnabled;
 
         http.securityMatcher("/**")
@@ -369,7 +368,7 @@ public class GovpaySecurityFilterChainAutoConfiguration {
      * <ul>
      *   <li>Static resources (se {@code govpay.auth.static-resources.enabled}) → permitAll;</li>
      *   <li>Public chain rules (path + opzionalmente metodi HTTP) → permitAll;</li>
-     *   <li>OPTIONS su {@code /**} → permitAll (CORS preflight, V1-aligned);</li>
+     *   <li>OPTIONS su {@code /**} → permitAll (CORS preflight);</li>
      *   <li>{@code anyRequest().authenticated()}.</li>
      * </ul>
      */
@@ -382,7 +381,7 @@ public class GovpaySecurityFilterChainAutoConfiguration {
         java.util.List<String> staticPaths =
                 staticResources.isEnabled() ? staticResources.getPermitAllPaths() : java.util.List.of();
         http.authorizeHttpRequests(a -> {
-            // CORS preflight (V1: <intercept-url pattern="/**" access="permitAll" method="OPTIONS"/>).
+            // CORS preflight (<intercept-url pattern="/**" access="permitAll" method="OPTIONS"/>).
             a.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll();
             for (String path : staticPaths) {
                 a.requestMatchers(path).permitAll();
@@ -431,7 +430,7 @@ public class GovpaySecurityFilterChainAutoConfiguration {
                                          boolean sessionAware,
                                          ObjectMapper objectMapper) throws Exception {
         if (sessionAware) {
-            // Replica V1: session invalida / scaduta -> 401 problem+json
+            // Session invalida / scaduta -> 401 problem+json
             // (NotAuthorizedInvalidSessionStrategy + NotAuthorizedSessionInformationExpiredStrategy).
             ProblemInvalidSessionStrategy invalidSession = new ProblemInvalidSessionStrategy(objectMapper);
             ProblemSessionInformationExpiredStrategy expiredSession =
@@ -506,9 +505,8 @@ public class GovpaySecurityFilterChainAutoConfiguration {
     }
 
     /**
-     * Logout per i metodi session-based (FORM e SPID). V1 aveva URL distinte
-     * per chain ({@code /rs/form/v1/logout}, {@code /rs/spid/v1/logout}); V2
-     * chain unica condivide {@code /auth/logout} per tutti i metodi che
+     * Logout per i metodi session-based (FORM e SPID).
+     * Chain unica condivide {@code /auth/logout} per tutti i metodi che
      * gestiscono sessione.
      */
     private static void configureSessionLogout(HttpSecurity http,
@@ -529,7 +527,7 @@ public class GovpaySecurityFilterChainAutoConfiguration {
     }
 
     /**
-     * Configura OAuth2 Resource Server (JWT) con decoder/validator V1-faithful,
+     * Configura OAuth2 Resource Server (JWT) con decoder/validator,
      * converter SPI-based per il mapping principal → Utenza locale, entry point
      * problem+json con WWW-Authenticate Bearer, e optional logout handler OIDC.
      */

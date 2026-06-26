@@ -28,13 +28,10 @@ import jakarta.servlet.http.HttpServletResponse;
  * l'autenticazione tramite un {@code AuthenticationManager} dedicato che
  * usa {@code LdapAuthenticationProvider}.
  *
- * <p>Porting V1 della sezione {@code BASIC_LDAP_PROVIDER} dello security XML:
- * V1 era mutuamente esclusivo con {@code BASIC_GOVPAY_PROVIDER} (operatore
- * sceglieva uno o l'altro). V2 chain unica permette la coesistenza: questo
- * filter viene posizionato prima di {@code BasicAuthenticationFilter}. Se
- * LDAP autentica → context settato. Se LDAP fallisce → context pulito,
- * {@code BasicAuthenticationFilter} di Spring fa il fallback verso il
- * provider DAO (se {@code govpay.auth.basic.enabled}).
+ * <p>Chain unica permette la coesistenza: questo filter viene posizionato
+ * prima di {@code BasicAuthenticationFilter}. Se LDAP autentica → context settato.
+ * Se LDAP fallisce → context pulito, {@code BasicAuthenticationFilter} di Spring
+ * fa il fallback verso il provider DAO (se {@code govpay.auth.basic.enabled}).
  *
  * <p>Self-stamping di {@link AuthType#LDAP} solo nel branch di successo:
  * marca esplicitamente l'audit lato server (utile per distinguere
@@ -78,9 +75,8 @@ public class LdapAuthenticationFilter extends OncePerRequestFilter {
             context.setAuthentication(authResult);
             SecurityContextHolder.setContext(context);
             // Self-stamp LDAP: il filter ha bound-ato contro LDAP con successo.
-            // Distinguere LDAP vs BASIC locale e' utile lato audit/log (V1
-            // pattern). Il client invia Authorization: Basic, ma lo stamping
-            // riporta LDAP perche' quel provider ha autenticato.
+            // Distinguere LDAP vs BASIC locale e' utile lato audit/log. Il client
+            // invia Authorization: Basic, ma lo stamping riporta LDAP perche' quel provider ha autenticato.
             request.setAttribute(AuthTypeStampingFilter.REQUEST_ATTRIBUTE, AuthType.LDAP);
             request.setAttribute(AuthTypeStampingFilter.REQUEST_ATTRIBUTE_PRINCIPAL, authResult.getName());
         } catch (UsernameNotFoundException ex) {

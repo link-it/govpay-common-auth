@@ -27,8 +27,7 @@ import jakarta.servlet.http.HttpServletResponse;
  * proprio {@link AuthenticationManager} come {@link UsernamePasswordAuthenticationToken}
  * (id=username, key=password).
  *
- * <p>Porting V1: {@code it.govpay.rs.v1.authentication.filter.ApiKeyBasicAuthFilter},
- * con failure-handling semplificato: se gli header sono assenti, il filter
+ * <p>Failure-handling semplificato: se gli header sono assenti, il filter
  * non agisce (passa al filter successivo). Se sono presenti ma l'auth
  * fallisce, il SecurityContext resta vuoto e l'eventuale 401 viene emesso
  * dall'{@link org.springframework.security.web.AuthenticationEntryPoint}

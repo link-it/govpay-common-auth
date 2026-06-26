@@ -25,40 +25,28 @@ import jakarta.servlet.http.HttpServletResponse;
  * la mTLS e propaga il certificato client (o solo il subject DN) via header
  * HTTP.
  *
- * <p>Porting V1 fedele di {@code it.govpay.rs.v1.authentication.preauth.filter.SSLHeaderPreAuthFilter},
- * con la pipeline che V1 ereditava da {@code CertificateUtils} di openspcoop2-utils,
- * reimplementata qui con JDK standard + commons-codec per evitare la
- * dipendenza esterna.
- *
  * <p>Pipeline (in ordine):
  * <ol>
  *   <li><b>Replace caratteri</b> (se abilitato): protegge i marker
  *       {@code -----BEGIN CERTIFICATE-----}/{@code -----END CERTIFICATE-----},
  *       sostituisce {@code replaceSource} con {@code replaceDest} nel body PEM
- *       (max 10000 iterazioni come safety net V1), re-inserisce i marker.
+ *       (max 10000 iterazioni come safety net), re-inserisce i marker.
  *       Caso d'uso: nginx con {@code $ssl_client_escaped_cert} che traduce
- *       {@code \n} → {@code \t} per fit-in-header. Default V1:
+ *       {@code \n} → {@code \t} per fit-in-header. Default:
  *       sorgente {@code \t}, destinazione {@code \n}.</li>
  *   <li><b>PEM enrichment</b>: re-aggiunge i marker se erano stati strippati
- *       per il replace (V1: stesso comportamento, con o senza newline tra
- *       marker e body a seconda che fossero gia' presenti nell'input originale).</li>
- *   <li><b>Try-fallback decoding</b> (replica del quirk V1): se uno qualsiasi
+ *       per il replace.</li>
+ *   <li><b>Try-fallback decoding</b>: se uno qualsiasi
  *       tra {@code urlDecode}, {@code base64Decode}, {@code hexDecode} e' true,
  *       tenta in sequenza URL → Base64 → (Hex, se hexDecode era true) finche'
  *       uno produce un cert parsabile. Se tutti falliscono, ritorna {@code null}.</li>
  *   <li><b>Parsing X.509</b>: via JDK {@code CertificateFactory.getInstance("X.509")},
- *       che accetta sia DER sia PEM in input (vs V1 {@code ArchiveLoader.load}
- *       che secondo il commento V1 supportava solo DER: V2 e' piu' permissiva
- *       — inputs che V1 rifiutava possono essere accettati, ma tutti i casi
- *       V1-validi continuano a funzionare).</li>
+ *       che accetta sia DER sia PEM in input.</li>
  *   <li><b>Subject DN</b>: {@code X509Certificate.getSubjectX500Principal().getName()},
- *       formato RFC 2253, byte-per-byte identico a V1 {@code CertificatePrincipal.toString()}
- *       (che internamente delega a {@code X500Principal.toString()}).</li>
+ *       formato RFC 2253.</li>
  * </ol>
  *
- * <p>Divergenza V2 esplicita rispetto a V1: in caso di failure del decoding+parsing,
- * V1 ritornava il valore raw dell'header come principal (auth poi falliva con
- * "utenza non trovata" mascherando l'errore reale). V2 ritorna {@code null}
+ * <p>In caso di failure del decoding+parsing ritorna {@code null}
  * → {@link AbstractPreAuthenticatedProcessingFilter} salta la request,
  * eventuale 401 viene emesso dall'entry point della chain con diagnostica
  * piu' chiara.
@@ -91,8 +79,7 @@ public class SslHeaderPreAuthenticationFilter extends AbstractPreAuthenticatedPr
         log.debug("SSL_HEADER: letto principal grezzo da header [{}], lunghezza={}",
                 properties.getPrincipalHeaderName(), headerValue.length());
 
-        // Step 1: replace caratteri (al di fuori della pipeline di decoding,
-        // come fa V1 in SSLHeaderPreAuthFilter.decodePrincipal).
+        // Step 1: replace caratteri (al di fuori della pipeline di decoding.
         boolean forceEnrichPEMBeginEnd = false;
         if (properties.isReplaceCharactersEnabled()) {
             String source = translateReplaceLiteral(properties.getReplaceSource(), DEFAULT_REPLACE_SOURCE);
@@ -103,8 +90,6 @@ public class SslHeaderPreAuthenticationFilter extends AbstractPreAuthenticatedPr
         }
 
         // Step 2: re-aggiunge PEM BEGIN/END se erano stati strippati per il replace.
-        // NB: V1 controlla anche config.isEnrichPEMBeginEnd() ma in SSLHeaderPreAuthFilter
-        // quel flag non viene mai settato → default false → solo forceEnrichPEMBeginEnd conta.
         if (forceEnrichPEMBeginEnd) {
             headerValue = addPEMDeclaration(headerValue, true);
         }
@@ -136,8 +121,8 @@ public class SslHeaderPreAuthenticationFilter extends AbstractPreAuthenticatedPr
     }
 
     /**
-     * Replica V1: traduce le stringhe letterali V1 (es. {@code "\\t"} dalla
-     * properties file) nei caratteri reali. Stringhe non riconosciute passano
+     * Traduce le stringhe letterali (es. {@code "\\t"} dalla properties file)
+     * nei caratteri reali. Stringhe non riconosciute passano
      * as-is (consente di scrivere direttamente il carattere reale in YAML).
      */
     static String translateReplaceLiteral(String input, String fallbackDefault) {
@@ -155,8 +140,7 @@ public class SslHeaderPreAuthenticationFilter extends AbstractPreAuthenticatedPr
     }
 
     /**
-     * Replica V1 {@code SSLHeaderPreAuthFilter.replaceCharacters}: protegge i
-     * marker BEGIN/END, applica il replace nel body, ritorna {@code true}
+     * Protegge i marker BEGIN/END, applica il replace nel body, ritorna {@code true}
      * se i marker erano presenti nell'input (per guidare la re-aggiunta in
      * {@link #addPEMDeclaration}).
      */
@@ -180,8 +164,7 @@ public class SslHeaderPreAuthenticationFilter extends AbstractPreAuthenticatedPr
     }
 
     /**
-     * Replica V1 {@code SSLHeaderPreAuthFilter.addPEMDeclaration}: re-aggiunge
-     * i marker. Quirk V1: il separatore tra marker e body e' {@code ""} se i
+     * Re-aggiunge i marker. Il separatore tra marker e body e' {@code ""} se i
      * marker erano stati strippati (perche' il body, post-replace, ha gia' le
      * sue newline), oppure {@code "\n"} se i marker non c'erano e li stiamo
      * forzando ex novo.
@@ -198,17 +181,16 @@ public class SslHeaderPreAuthenticationFilter extends AbstractPreAuthenticatedPr
     }
 
     /**
-     * Try-fallback V1: se almeno uno tra {@code urlDecode}/{@code base64Decode}/
+     * Try-fallback: se almeno uno tra {@code urlDecode}/{@code base64Decode}/
      * {@code hexDecode} e' attivo, tenta in sequenza URL → Base64 (e Hex se
      * l'utente l'aveva richiesto) finche' uno produce un cert parsabile.
      *
-     * <p>NB: replica il quirk V1 per cui anche se l'utente ha chiesto solo
-     * {@code base64Decode}, V1 tenta comunque PRIMA URL decode (la config
+     * <p>NB: replica il quirk per cui anche se l'utente ha chiesto solo
+     * {@code base64Decode}, si tenta comunque PRIMA URL decode (la config
      * {@code config.setUrlDecode(true)} viene forzata indipendentemente
      * dall'intent originale dell'utente). Questo significa che, ad esempio,
      * un input PEM URL-encoded viene comunque accettato da una config che
-     * tecnicamente chiedeva solo Base64. Comportamento V1 by-design o bug
-     * dipende dall'interpretazione; lo replichiamo per fedelta'.
+     * tecnicamente chiedeva solo Base64.
      */
     private X509Certificate tryDecodeAndParse(String input) {
         boolean anyDecodeFlag = properties.isUrlDecode()
@@ -233,8 +215,7 @@ public class SslHeaderPreAuthenticationFilter extends AbstractPreAuthenticatedPr
         } catch (Exception ex) {
             log.debug("SSL_HEADER: Base64 decode fallito", ex);
         }
-        // Attempt Hex decode (solo se richiesto dall'utente, conformemente al
-        // branch V1 gated da isUrlDecodeOrBase64DecodeOrHexDecode).
+        // Attempt Hex decode (solo se richiesto dall'utente).
         if (properties.isHexDecode()) {
             try {
                 byte[] hexBytes = Hex.decodeHex(input);

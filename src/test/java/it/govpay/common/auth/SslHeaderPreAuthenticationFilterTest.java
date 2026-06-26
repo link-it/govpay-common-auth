@@ -88,7 +88,7 @@ class SslHeaderPreAuthenticationFilterTest {
     void addPEMDeclarationAdjacentWhenForceEnrichTrue() {
         String body = "BODY\nwith\nnewlines";
         String result = SslHeaderPreAuthenticationFilter.addPEMDeclaration(body, true);
-        // V1: forceEnrich=true → markers adiacenti, no newline aggiuntivo
+        // forceEnrich=true → markers adiacenti, no newline aggiuntivo
         assertThat(result).isEqualTo(
                 SslHeaderPreAuthenticationFilter.PEM_BEGIN + body + SslHeaderPreAuthenticationFilter.PEM_END);
     }
@@ -97,7 +97,7 @@ class SslHeaderPreAuthenticationFilterTest {
     void addPEMDeclarationWithNewlineWhenForceEnrichFalse() {
         String body = "BODY";
         String result = SslHeaderPreAuthenticationFilter.addPEMDeclaration(body, false);
-        // V1: forceEnrich=false → markers con newline di separazione
+        // forceEnrich=false → markers con newline di separazione
         assertThat(result).isEqualTo(
                 SslHeaderPreAuthenticationFilter.PEM_BEGIN + "\n" + body + "\n" + SslHeaderPreAuthenticationFilter.PEM_END);
     }
