@@ -1,4 +1,10 @@
-# govpay-common-auth
+<p align="center">
+<img src="https://www.link.it/wp-content/uploads/2025/01/logo-govpay.svg" alt="GovPay Logo" width="200"/>
+</p>
+
+# GovPay Common Auth
+
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://raw.githubusercontent.com/link-it/govpay-common-auth/main/LICENSE)
 
 Libreria di autenticazione/autorizzazione per API di GovPay. È una libreria Spring
 Boot **auto-configurata**: una volta aggiunta al classpath registra una
