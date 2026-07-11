@@ -24,7 +24,7 @@ risolvere il principal sul proprio data layer e l'abilitazione dei metodi via pr
 <dependency>
     <groupId>org.gov4j.govpay</groupId>
     <artifactId>govpay-common-auth</artifactId>
-    <version>1.0.0-SNAPSHOT</version>
+    <version>1.0.0</version>
 </dependency>
 ```
 
