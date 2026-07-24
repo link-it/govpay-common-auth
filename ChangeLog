@@ -1,3 +1,13 @@
+2026-07-24  Giuliano Pintori <giuliano.pintori@link.it>
+
+	* [Release]
+	Avanzata la versione del progetto da 1.0.0 a 1.0.1.
+	Aggiornati coerentemente pom.xml (version e url), le coordinate Maven
+	nel README e le note di rilascio (RELEASE_NOTES.md).
+
+	* [Build]
+	Allineato il parent govpay-bom da 2.0.1 a 2.0.3.
+
 2026-07-11  Giuliano Pintori <giuliano.pintori@link.it>
 
 	* [Release]

@@ -7,17 +7,17 @@
     <parent>
         <groupId>org.gov4j.govpay</groupId>
         <artifactId>govpay-bom</artifactId>
-        <version>2.0.1</version>
+        <version>2.0.3</version>
         <relativePath/>
     </parent>
 
     <artifactId>govpay-common-auth</artifactId>
-    <version>1.0.0</version>
+    <version>1.0.1</version>
     <packaging>jar</packaging>
 
     <name>GovPay Common Auth</name>
     <description>Libreria di autorizzazione GovPay</description>
-    <url>https://gov4j.org/maven/govpay/govpay-common-auth/1.0.0</url>
+    <url>https://gov4j.org/maven/govpay/govpay-common-auth/1.0.1</url>
 
     <scm>
         <connection>scm:git:https://github.com/link-it/govpay-common-auth.git</connection>
