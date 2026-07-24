@@ -1,12 +1,19 @@
 # GovPay Common Auth 1.0.1
 
-Prima release della libreria di autenticazione/autorizzazione condivisa di GovPay, sulla linea Spring Boot 4.x / Spring Framework 7.x. È una libreria Spring Boot **auto-configurata**: una volta aggiunta al classpath registra una **filter chain di sicurezza unica** che supporta tutti i metodi di autenticazione di GovPay, lasciando al consumer solo l'implementazione di una SPI minimale per risolvere il principal sul proprio data layer e l'abilitazione dei metodi via property.
+Maintenance release sulla linea 1.x (Spring Boot 4.x / Spring Framework 7.x). Allinea il parent POM alla nuova release del BOM. Per la descrizione completa della libreria e delle funzionalità introdotte, vedere le [note di rilascio della 1.0.0](https://github.com/link-it/govpay-common-auth/releases/tag/1.0.0).
+
+## Novita' della 1.0.1
+
+- **Parent POM `govpay-bom` allineato alla 2.0.3** (era 2.0.1). Aggiorna transitivamente **Jackson a 3.2.1** (era 3.1.4). Le altre versioni principali (Spring Boot 4.1.0, Spring Framework 7.0.8, Spring Security 7.1.0, OWASP Dependency-Check 12.2.2) restano invariate rispetto alla 1.0.0.
+- **Pipeline**: aggiornata la action SonarCloud da `SonarSource/sonarcloud-github-action@v2` (deprecata) a `SonarSource/sonarqube-scan-action@v5`, con env `SONAR_HOST_URL=https://sonarcloud.io`.
 
 ## Funzionalita'
 
+Libreria Spring Boot **auto-configurata**: registra una **filter chain di sicurezza unica** che rileva automaticamente il metodo di autenticazione dalla request, lasciando al consumer solo l'implementazione di una SPI minimale.
+
 ### Metodi di autenticazione
 
-Ogni metodo è disabilitato di default e si attiva con `govpay.auth.<metodo>.enabled=true`. I metodi attivi convivono nella stessa chain: la libreria rileva automaticamente quale applicare in base alla request.
+Ogni metodo è disabilitato di default e si attiva con `govpay.auth.<metodo>.enabled=true`:
 
 - **`BASIC`** — Basic Auth (username/password) verificata localmente
 - **`LDAP`** — Basic Auth verificata su server LDAP esterno
@@ -22,7 +29,7 @@ Ogni metodo è disabilitato di default e si attiva con `govpay.auth.<metodo>.ena
 
 ### SPI per il consumer
 
-- **`GovpayPrincipalLoader`** (obbligatoria) — unico punto di contatto col data layer: risolve il principal in un `AuthenticatedSubject` (password hash, abilitazione, ruoli)
+- **`GovpayPrincipalLoader`** (obbligatoria) — risolve il principal in un `AuthenticatedSubject` (password hash, abilitazione, ruoli)
 - **`JsonLoginResponseWriter`** — personalizza il body della risposta di `POST /auth/login`
 - **`AuthEventListener`** — riceve `onLoginSuccess` / `onLoginFailed` / `onLogout` per audit
 - **`AuthenticationDetailsContributor`** — popola `Authentication.getDetails()` con attributi custom
@@ -43,7 +50,7 @@ Ogni metodo è disabilitato di default e si attiva con `govpay.auth.<metodo>.ena
 - Spring Boot 4.1.0
 - Spring Framework 7.0.8
 - Spring Security 7.1.0 (core, LDAP, OAuth2 Resource Server)
-- Jackson 3.1.4 (groupId `tools.jackson`)
+- Jackson 3.2.1 (groupId `tools.jackson`)
 - Parent POM `org.gov4j.govpay:govpay-bom:2.0.3`
 - `jakarta.servlet-api` in scope `provided` (la porta il consumer)
 - OWASP Dependency-Check 12.2.2, JaCoCo 0.8.14
@@ -51,7 +58,7 @@ Ogni metodo è disabilitato di default e si attiva con `govpay.auth.<metodo>.ena
 ## Pipeline CI/CD
 
 - Build, test e code coverage (JaCoCo)
-- Analisi qualita' codice su SonarCloud
+- Analisi qualita' codice su SonarCloud (`sonarqube-scan-action@v5`)
 - Verifica vulnerabilita' dipendenze: OWASP Dependency-Check (NVD + OSS Index) e OSV Scanner (SARIF)
 - Analisi compatibilita' licenze
 - Generazione **SBOM CycloneDX** (json + xml) tramite `cyclonedx-maven-plugin`
