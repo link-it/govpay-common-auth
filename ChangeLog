@@ -8,6 +8,13 @@
 	* [Build]
 	Allineato il parent govpay-bom da 2.0.1 a 2.0.3.
 
+	* [Build]
+	Aggiornata la action SonarCloud nella pipeline maven.yml da
+	SonarSource/sonarcloud-github-action@v2 (deprecata) a
+	SonarSource/sonarqube-scan-action@v5, con aggiunta della env
+	SONAR_HOST_URL=https://sonarcloud.io. Allineamento agli altri
+	progetti govpay-*.
+
 2026-07-11  Giuliano Pintori <giuliano.pintori@link.it>
 
 	* [Release]
