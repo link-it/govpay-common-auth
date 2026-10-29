@@ -4,8 +4,7 @@ package it.govpay.common.auth.spi;
  * Motivo del fallimento di un tentativo di autenticazione.
  *
  * <p>Esposto a {@link AuthEventListener#onLoginFailed} per consentire al
- * consumer di tracciare l'esito su audit con motivo strutturato (cfr.
- * {@code PROFILO_LOGIN_FAILED} in issue link-it/govpay-console-api#10).
+ * consumer di tracciare l'esito su audit con motivo strutturato.
  */
 public enum FailureReason {
     /** Credenziali non valide (password errata o principal inesistente). */
