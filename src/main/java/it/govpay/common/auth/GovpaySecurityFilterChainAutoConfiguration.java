@@ -2,6 +2,7 @@ package it.govpay.common.auth;
 
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 
 import org.springframework.beans.factory.ObjectProvider;
@@ -38,10 +39,13 @@ import org.springframework.security.web.access.AccessDeniedHandler;
 import org.springframework.security.web.authentication.preauth.AbstractPreAuthenticatedProcessingFilter;
 import org.springframework.security.web.authentication.preauth.PreAuthenticatedAuthenticationProvider;
 import org.springframework.security.web.authentication.preauth.x509.X509AuthenticationFilter;
+import org.springframework.security.web.authentication.logout.DelegatingLogoutSuccessHandler;
+import org.springframework.security.web.authentication.logout.LogoutSuccessHandler;
 import org.springframework.security.web.authentication.www.BasicAuthenticationFilter;
 import org.springframework.security.core.userdetails.UserDetailsByNameServiceWrapper;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
+import org.springframework.security.web.util.matcher.OrRequestMatcher;
 import org.springframework.security.web.util.matcher.RequestMatcher;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
@@ -340,10 +344,12 @@ public class GovpaySecurityFilterChainAutoConfiguration {
         configureCsrf(http, form, sessionAware);
         configureChainManagerAndBuiltins(http, properties, basicUdsProvider, sslUdsProvider,
                 passwordEncoder, authenticationEntryPoint);
-        // Logout abilitato per qualunque metodo session-based (FORM o SPID).
-        configureSessionLogout(http, form, formEnabled || spidEnabled, eventListener);
-        configureOauth2(http, properties.getOauth2(), jwtDecoderProvider, jwtAuthenticationConverterProvider,
-                bearerEntryPointProvider, objectMapper);
+        boolean oauth2Active = configureOauth2(http, properties.getOauth2(), jwtDecoderProvider,
+                jwtAuthenticationConverterProvider, bearerEntryPointProvider);
+        // Logout di sessione per i metodi session-based (FORM o SPID) e logout OIDC:
+        // configurati insieme perche' condividono l'unico LogoutFilter della chain.
+        configureLogout(http, form, formEnabled || spidEnabled, properties.getOauth2(), oauth2Active,
+                eventListener, objectMapper);
 
         // Filter custom della libreria: posizionati prima/dopo Basic per ordine deterministico.
         jsonLoginFilterProvider.ifAvailable(f -> http.addFilterBefore(f, BasicAuthenticationFilter.class));
@@ -505,61 +511,83 @@ public class GovpaySecurityFilterChainAutoConfiguration {
     }
 
     /**
-     * Logout per i metodi session-based (FORM e SPID).
-     * Chain unica condivide {@code /auth/logout} per tutti i metodi che
-     * gestiscono sessione.
+     * Configura l'unico {@code LogoutFilter} della chain:
+     * <ul>
+     *   <li>logout di sessione ({@code POST form.logout-path}) per i metodi
+     *       session-based (FORM e SPID): invalida la sessione, cancella i cookie
+     *       di sessione e CSRF, risponde 204;</li>
+     *   <li>logout OIDC ({@code POST oauth2.logout-path}) se OAUTH2 e' attivo e
+     *       sono configurati {@code logout-uri} e {@code post-logout-redirect-uri}:
+     *       risponde con l'URL di logout dell'IdP.</li>
+     * </ul>
+     * I due logout possono coesistere: matcher in OR e success handler scelto
+     * in base al path. Configurarli con due chiamate separate a
+     * {@code http.logout(...)} farebbe vincere l'ultima (stesso configurer).
      */
-    private static void configureSessionLogout(HttpSecurity http,
-                                               GovpayAuthProperties.Form form,
-                                               boolean sessionLogoutEnabled,
-                                               AuthEventListener eventListener) throws Exception {
-        if (!sessionLogoutEnabled) {
+    private static void configureLogout(HttpSecurity http,
+                                        GovpayAuthProperties.Form form,
+                                        boolean sessionLogoutEnabled,
+                                        GovpayAuthProperties.Oauth2 oauth2,
+                                        boolean oauth2Active,
+                                        AuthEventListener eventListener,
+                                        ObjectMapper objectMapper) throws Exception {
+        LinkedHashMap<RequestMatcher, LogoutSuccessHandler> handlers = new LinkedHashMap<>();
+        if (sessionLogoutEnabled) {
+            handlers.put(PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.POST, form.getLogoutPath()),
+                    new GovpayLogoutSuccessHandler(eventListener));
+        }
+        if (oauth2Active
+                && oauth2.getLogoutUri() != null && !oauth2.getLogoutUri().isBlank()
+                && oauth2.getPostLogoutRedirectUri() != null && !oauth2.getPostLogoutRedirectUri().isBlank()) {
+            handlers.put(PathPatternRequestMatcher.withDefaults().matcher(HttpMethod.POST, oauth2.getLogoutPath()),
+                    new Oauth2LogoutSuccessHandler(
+                            oauth2.getLogoutUri(), oauth2.getPostLogoutRedirectUri(), objectMapper));
+        }
+        if (handlers.isEmpty()) {
             return;
         }
-        RequestMatcher logoutMatcher = PathPatternRequestMatcher.withDefaults()
-                .matcher(HttpMethod.POST, form.getLogoutPath());
-        http.logout(l -> l
-                .logoutRequestMatcher(logoutMatcher)
-                .logoutSuccessHandler(new GovpayLogoutSuccessHandler(eventListener))
-                .deleteCookies("JSESSIONID", form.getCsrfCookieName())
-                .invalidateHttpSession(true)
-                .clearAuthentication(true));
+        RequestMatcher logoutMatcher = new OrRequestMatcher(new ArrayList<>(handlers.keySet()));
+        DelegatingLogoutSuccessHandler successHandler = new DelegatingLogoutSuccessHandler(handlers);
+        successHandler.setDefaultLogoutSuccessHandler(handlers.values().iterator().next());
+        http.logout(l -> {
+            l.logoutRequestMatcher(logoutMatcher)
+                    .logoutSuccessHandler(successHandler)
+                    .invalidateHttpSession(true)
+                    .clearAuthentication(true);
+            if (sessionLogoutEnabled) {
+                l.deleteCookies("JSESSIONID", form.getCsrfCookieName());
+            }
+        });
     }
 
     /**
      * Configura OAuth2 Resource Server (JWT) con decoder/validator,
-     * converter SPI-based per il mapping principal → Utenza locale, entry point
-     * problem+json con WWW-Authenticate Bearer, e optional logout handler OIDC.
+     * converter SPI-based per il mapping principal → Utenza locale ed entry point
+     * problem+json con WWW-Authenticate Bearer. Il logout OIDC e' configurato
+     * da {@link #configureLogout}.
+     *
+     * @return {@code true} se il resource server e' stato configurato
      */
-    private static void configureOauth2(HttpSecurity http,
-                                        GovpayAuthProperties.Oauth2 oauth2,
-                                        ObjectProvider<JwtDecoder> jwtDecoderProvider,
-                                        ObjectProvider<GovpayJwtAuthenticationConverter> jwtAuthenticationConverterProvider,
-                                        ObjectProvider<BearerTokenProblemAuthenticationEntryPoint> bearerEntryPointProvider,
-                                        ObjectMapper objectMapper) throws Exception {
+    private static boolean configureOauth2(HttpSecurity http,
+                                           GovpayAuthProperties.Oauth2 oauth2,
+                                           ObjectProvider<JwtDecoder> jwtDecoderProvider,
+                                           ObjectProvider<GovpayJwtAuthenticationConverter> jwtAuthenticationConverterProvider,
+                                           ObjectProvider<BearerTokenProblemAuthenticationEntryPoint> bearerEntryPointProvider)
+            throws Exception {
         if (!oauth2.isEnabled()) {
-            return;
+            return false;
         }
         JwtDecoder decoder = jwtDecoderProvider.getIfAvailable();
         GovpayJwtAuthenticationConverter converter = jwtAuthenticationConverterProvider.getIfAvailable();
         BearerTokenProblemAuthenticationEntryPoint entryPoint = bearerEntryPointProvider.getIfAvailable();
         if (decoder == null || converter == null || entryPoint == null) {
-            return;
+            return false;
         }
         http.oauth2ResourceServer(oauth -> oauth
                 .authenticationEntryPoint(entryPoint)
                 .jwt(jwt -> jwt
                         .decoder(decoder)
                         .jwtAuthenticationConverter(converter)));
-        // Logout OAuth2 separato: solo se logoutUri/postLogoutRedirectUri configurati.
-        if (oauth2.getLogoutUri() != null && !oauth2.getLogoutUri().isBlank()
-                && oauth2.getPostLogoutRedirectUri() != null && !oauth2.getPostLogoutRedirectUri().isBlank()) {
-            RequestMatcher matcher = PathPatternRequestMatcher.withDefaults()
-                    .matcher(HttpMethod.POST, oauth2.getLogoutPath());
-            http.logout(l -> l
-                    .logoutRequestMatcher(matcher)
-                    .logoutSuccessHandler(new Oauth2LogoutSuccessHandler(
-                            oauth2.getLogoutUri(), oauth2.getPostLogoutRedirectUri(), objectMapper)));
-        }
+        return true;
     }
 }
