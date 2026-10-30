@@ -3,10 +3,11 @@ package it.govpay.common.auth;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Rate limiter in-memory per i tentativi falliti di login. Implementa una
@@ -16,6 +17,14 @@ import java.util.concurrent.ConcurrentMap;
  * la finestra e' locale al singolo nodo e quindi N * max attempts globali.
  * Sufficiente come prima difesa, in attesa di un eventuale rate limiter
  * distribuito.
+ *
+ * <p>Memoria limitata: per ogni chiave si tengono al massimo {@code maxAttempts}
+ * istanti, {@link #tryAcquire} non crea voci e le voci senza tentativi nella
+ * finestra vengono rimosse, sia quando la chiave viene consultata sia con una
+ * pulizia di tutta la mappa eseguita al piu' una volta per finestra. Restano
+ * quindi solo le chiavi con tentativi falliti negli ultimi {@code window}.
+ * Tutti gli accessi a una voce passano da {@code compute*} della mappa, che li
+ * serializza per chiave.
  */
 public class LoginRateLimiter {
 
@@ -23,6 +32,7 @@ public class LoginRateLimiter {
     private final Duration window;
     private final Clock clock;
     private final ConcurrentMap<String, Deque<Instant>> failures = new ConcurrentHashMap<>();
+    private final AtomicReference<Instant> nextSweep;
 
     public LoginRateLimiter(int maxAttempts, Duration window) {
         this(maxAttempts, window, Clock.systemUTC());
@@ -38,6 +48,7 @@ public class LoginRateLimiter {
         this.maxAttempts = maxAttempts;
         this.window = window;
         this.clock = clock;
+        this.nextSweep = new AtomicReference<>(clock.instant().plus(window));
     }
 
     /**
@@ -47,15 +58,16 @@ public class LoginRateLimiter {
      *         nella finestra; {@code false} se la soglia e' stata superata.
      */
     public boolean tryAcquire(String key) {
-        Deque<Instant> queue = failures.computeIfAbsent(key, k -> new ConcurrentLinkedDeque<>());
         Instant now = clock.instant();
+        sweepIfDue(now);
         Instant cutoff = now.minus(window);
-        synchronized (queue) {
-            while (!queue.isEmpty() && queue.peekFirst().isBefore(cutoff)) {
-                queue.pollFirst();
-            }
-            return queue.size() < maxAttempts;
-        }
+        int[] size = {0};
+        failures.computeIfPresent(key, (k, queue) -> {
+            prune(queue, cutoff);
+            size[0] = queue.size();
+            return queue.isEmpty() ? null : queue;
+        });
+        return size[0] < maxAttempts;
     }
 
     /**
@@ -63,10 +75,19 @@ public class LoginRateLimiter {
      * authentication failed, non sui successi.
      */
     public void recordFailure(String key) {
-        Deque<Instant> queue = failures.computeIfAbsent(key, k -> new ConcurrentLinkedDeque<>());
-        synchronized (queue) {
-            queue.offerLast(clock.instant());
-        }
+        Instant now = clock.instant();
+        sweepIfDue(now);
+        Instant cutoff = now.minus(window);
+        failures.compute(key, (k, queue) -> {
+            Deque<Instant> q = queue == null ? new ArrayDeque<>() : queue;
+            prune(q, cutoff);
+            q.offerLast(now);
+            // Per decidere bastano gli ultimi maxAttempts tentativi.
+            while (q.size() > maxAttempts) {
+                q.pollFirst();
+            }
+            return q;
+        });
     }
 
     /**
@@ -74,5 +95,31 @@ public class LoginRateLimiter {
      */
     public void reset(String key) {
         failures.remove(key);
+    }
+
+    /** Numero di chiavi tenute in memoria (per i test). */
+    int size() {
+        return failures.size();
+    }
+
+    private static void prune(Deque<Instant> queue, Instant cutoff) {
+        while (!queue.isEmpty() && queue.peekFirst().isBefore(cutoff)) {
+            queue.pollFirst();
+        }
+    }
+
+    /** Rimuove le voci senza tentativi nella finestra, al piu' una volta per finestra. */
+    private void sweepIfDue(Instant now) {
+        Instant due = nextSweep.get();
+        if (now.isBefore(due) || !nextSweep.compareAndSet(due, now.plus(window))) {
+            return;
+        }
+        Instant cutoff = now.minus(window);
+        for (String key : failures.keySet()) {
+            failures.computeIfPresent(key, (k, queue) -> {
+                prune(queue, cutoff);
+                return queue.isEmpty() ? null : queue;
+            });
+        }
     }
 }

@@ -322,7 +322,7 @@ Le richieste `OPTIONS` (preflight CORS) sono sempre pubbliche; tutti gli altri p
 - **Sessione.** La sessione è creata solo con `FORM` o `SPID` (al massimo due sessioni contemporanee per utenza, identificativo rigenerato al login); negli altri casi la catena è stateless.
 - **CSRF.** Attivo solo con `FORM` o `SPID`, con token nel cookie `XSRF-TOKEN` (leggibile da JavaScript) e header `X-XSRF-TOKEN`. Non è richiesto per la `POST` di login, per le richieste con header `Authorization` e per quelle senza sessione.
 - **Errori in `application/problem+json`.** 401 senza autenticazione valida (con `WWW-Authenticate: Bearer` per `OAUTH2`), 403 per accesso negato o token CSRF errato, 401 per sessione scaduta o non valida.
-- **Limite dei tentativi di login.** `LoginRateLimiter` conta i tentativi falliti di `POST /auth/login` per IP del chiamante (`request.getRemoteAddr()`) e risponde 429 oltre `rate-limit.attempts` nella finestra; un login riuscito azzera il conteggio. L'header `X-Forwarded-For` non viene letto direttamente, perché il client può impostarlo a piacere e aggirare il limite.
+- **Limite dei tentativi di login.** `LoginRateLimiter` conta i tentativi falliti di `POST /auth/login` per IP del chiamante (`request.getRemoteAddr()`) e risponde 429 oltre `rate-limit.attempts` nella finestra; un login riuscito azzera il conteggio. Il conteggio è in memoria e per nodo; restano in memoria solo gli IP con tentativi falliti nella finestra (al massimo `rate-limit.attempts` istanti ciascuno), le voci scadute sono rimosse. L'header `X-Forwarded-For` non viene letto direttamente, perché il client può impostarlo a piacere e aggirare il limite.
 
 ### Dietro un reverse proxy
 

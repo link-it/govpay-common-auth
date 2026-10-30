@@ -73,6 +73,77 @@ class LoginRateLimiterTest {
                 .isInstanceOf(IllegalArgumentException.class);
     }
 
+    @Test
+    void tryAcquireDoesNotCreateEntries() {
+        LoginRateLimiter limiter = new LoginRateLimiter(2, Duration.ofMinutes(15));
+
+        for (int i = 0; i < 1000; i++) {
+            assertThat(limiter.tryAcquire("10.0.0." + i)).isTrue();
+        }
+
+        assertThat(limiter.size()).isZero();
+    }
+
+    @Test
+    void expiredEntryIsRemovedWhenConsulted() {
+        MutableClock clock = new MutableClock(Instant.parse("2026-06-15T10:00:00Z"));
+        LoginRateLimiter limiter = new LoginRateLimiter(2, Duration.ofMinutes(15), clock);
+
+        limiter.recordFailure("a");
+        assertThat(limiter.size()).isEqualTo(1);
+
+        clock.advance(Duration.ofMinutes(16));
+        assertThat(limiter.tryAcquire("a")).isTrue();
+        assertThat(limiter.size()).isZero();
+    }
+
+    @Test
+    void periodicSweepRemovesEntriesOfKeysNeverSeenAgain() {
+        MutableClock clock = new MutableClock(Instant.parse("2026-06-15T10:00:00Z"));
+        LoginRateLimiter limiter = new LoginRateLimiter(2, Duration.ofMinutes(15), clock);
+
+        for (int i = 0; i < 500; i++) {
+            limiter.recordFailure("10.0." + (i / 256) + "." + (i % 256));
+        }
+        assertThat(limiter.size()).isEqualTo(500);
+
+        // Dopo la finestra, il primo accesso con un'altra chiave pulisce la mappa.
+        clock.advance(Duration.ofMinutes(16));
+        limiter.recordFailure("192.168.1.1");
+
+        assertThat(limiter.size()).isEqualTo(1);
+    }
+
+    @Test
+    void sweepKeepsEntriesStillInsideTheWindow() {
+        MutableClock clock = new MutableClock(Instant.parse("2026-06-15T10:00:00Z"));
+        LoginRateLimiter limiter = new LoginRateLimiter(2, Duration.ofMinutes(15), clock);
+
+        limiter.recordFailure("vecchio");
+        clock.advance(Duration.ofMinutes(10));
+        limiter.recordFailure("recente");
+        limiter.recordFailure("recente");
+        clock.advance(Duration.ofMinutes(6));
+
+        limiter.recordFailure("altro");
+
+        assertThat(limiter.size()).isEqualTo(2);
+        assertThat(limiter.tryAcquire("recente")).isFalse();
+        assertThat(limiter.tryAcquire("vecchio")).isTrue();
+    }
+
+    @Test
+    void failuresPerKeyAreCappedAtMaxAttempts() {
+        LoginRateLimiter limiter = new LoginRateLimiter(3, Duration.ofMinutes(15));
+
+        for (int i = 0; i < 10_000; i++) {
+            limiter.recordFailure("a");
+        }
+
+        assertThat(limiter.tryAcquire("a")).isFalse();
+        assertThat(limiter.size()).isEqualTo(1);
+    }
+
     private static class MutableClock extends Clock {
         private Instant now;
         MutableClock(Instant initial) { this.now = initial; }
