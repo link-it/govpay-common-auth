@@ -193,6 +193,8 @@ govpay.auth.public-chain.permit-all-paths[4].methods[0]=GET
 
 La libreria non ha un proprio `application.properties`: le proprietà, tutte con prefisso `govpay.auth.`, si impostano nell'applicazione che la usa (`application.properties`, `-D<proprietà>=<valore>` o variabili d'ambiente). La variabile d'ambiente segue le regole di Spring Boot: maiuscole, `.` sostituito da `_` e trattini rimossi, per esempio `GOVPAY_AUTH_BASIC_ENABLED` per `govpay.auth.basic.enabled` e `GOVPAY_AUTH_PUBLICCHAIN_PERMITALLPATHS_0_PATH` per `govpay.auth.public-chain.permit-all-paths[0].path`.
 
+Il jar contiene i metadati delle proprietà (`META-INF/spring-configuration-metadata.json`), usati dagli IDE per il completamento e la documentazione nei file di configurazione dei progetti.
+
 Ogni metodo ha la proprietà `govpay.auth.<metodo>.enabled` (default `false`). Le liste si impostano con valori separati da virgola o con gli indici (`[0]`, `[1]`, ...).
 
 ### BASIC e password
