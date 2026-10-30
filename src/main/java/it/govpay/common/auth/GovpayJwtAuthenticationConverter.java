@@ -9,6 +9,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
+import org.springframework.security.authentication.DisabledException;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
@@ -70,6 +71,11 @@ public class GovpayJwtAuthenticationConverter implements Converter<Jwt, Abstract
         AuthenticatedSubject subject = loader.load(principalValue, AuthType.OAUTH2);
         if (subject == null) {
             throw new UsernameNotFoundException("Utenza OAUTH2 non trovata localmente: " + principalValue);
+        }
+        if (!subject.enabled()) {
+            // Stessa regola degli altri metodi (GovpayUserDetailsServiceAdapter):
+            // un'utenza disabilitata non si autentica.
+            throw new DisabledException("Utenza OAUTH2 disabilitata: " + principalValue);
         }
 
         List<GrantedAuthority> merged = new ArrayList<>();
