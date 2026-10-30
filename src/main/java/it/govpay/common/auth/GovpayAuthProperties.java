@@ -76,7 +76,7 @@ public class GovpayAuthProperties {
     }
 
     /**
-     * Mappata su property {@code govpay.auth.public.*}; il nome del getter
+     * Mappata su property {@code govpay.auth.public-chain.*}; il nome del getter
      * usa {@code publicChain} perche' {@code public} e' keyword Java.
      */
     public PublicChain getPublicChain() {
