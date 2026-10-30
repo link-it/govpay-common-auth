@@ -322,7 +322,21 @@ Le richieste `OPTIONS` (preflight CORS) sono sempre pubbliche; tutti gli altri p
 - **Sessione.** La sessione è creata solo con `FORM` o `SPID` (al massimo due sessioni contemporanee per utenza, identificativo rigenerato al login); negli altri casi la catena è stateless.
 - **CSRF.** Attivo solo con `FORM` o `SPID`, con token nel cookie `XSRF-TOKEN` (leggibile da JavaScript) e header `X-XSRF-TOKEN`. Non è richiesto per la `POST` di login, per le richieste con header `Authorization` e per quelle senza sessione.
 - **Errori in `application/problem+json`.** 401 senza autenticazione valida (con `WWW-Authenticate: Bearer` per `OAUTH2`), 403 per accesso negato o token CSRF errato, 401 per sessione scaduta o non valida.
-- **Limite dei tentativi di login.** `LoginRateLimiter` conta i tentativi falliti di `POST /auth/login` per IP (il primo indirizzo di `X-Forwarded-For` se presente, altrimenti l'indirizzo del client) e risponde 429 oltre `rate-limit.attempts` nella finestra; un login riuscito azzera il conteggio.
+- **Limite dei tentativi di login.** `LoginRateLimiter` conta i tentativi falliti di `POST /auth/login` per IP del chiamante (`request.getRemoteAddr()`) e risponde 429 oltre `rate-limit.attempts` nella finestra; un login riuscito azzera il conteggio. L'header `X-Forwarded-For` non viene letto direttamente, perché il client può impostarlo a piacere e aggirare il limite.
+
+### Dietro un reverse proxy
+
+Senza configurazione, dietro un reverse proxy `getRemoteAddr()` è l'indirizzo del proxy: tutti i client condividono lo stesso conteggio dei tentativi falliti e, superato il limite, nessuno riesce più a fare login per la durata della finestra. Il progetto che usa la libreria deve far leggere a Spring Boot l'IP reale dagli header del proxy, che vengono accettati solo se la richiesta arriva da un proxy fidato:
+
+```properties
+server.forward-headers-strategy=native
+# Indirizzi dei proxy fidati (espressione regolare). Il default di Tomcat copre
+# le reti private (10/8, 192.168/16, 172.16/12, 169.254/16, 127/8); va
+# impostato se il proxy ha un indirizzo diverso.
+server.tomcat.remoteip.internal-proxies=10\\.0\\.0\\.5
+```
+
+Con `native` l'IP è ricavato da `X-Forwarded-For` da Tomcat (`RemoteIpValve`); in alternativa `framework` usa il `ForwardedHeaderFilter` di Spring, che però si fida degli header di qualunque chiamante, quindi va usato solo se il servizio è raggiungibile esclusivamente dal proxy.
 
 ## Licenza
 
