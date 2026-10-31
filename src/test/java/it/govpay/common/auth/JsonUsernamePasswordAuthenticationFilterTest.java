@@ -161,6 +161,20 @@ class JsonUsernamePasswordAuthenticationFilterTest {
         assertThat(response.getStatus()).isEqualTo(400);
     }
 
+    @Test
+    void rateLimitKeyIgnoresClientSuppliedForwardedFor() throws Exception {
+        MockHttpServletRequest request = postLogin("alice", "wrong");
+        request.setRemoteAddr("10.0.0.7");
+        request.addHeader("X-Forwarded-For", "203.0.113.99, 10.0.0.1");
+        when(authenticationManager.authenticate(any()))
+                .thenThrow(new BadCredentialsException("bad"));
+
+        filter.doFilter(request, new MockHttpServletResponse(), new MockFilterChain());
+
+        verify(rateLimiter).tryAcquire("10.0.0.7");
+        verify(rateLimiter).recordFailure("10.0.0.7");
+    }
+
     private MockHttpServletRequest postLogin(String username, String password) {
         MockHttpServletRequest request = new MockHttpServletRequest("POST", "/auth/login");
         request.setServletPath("/auth/login");

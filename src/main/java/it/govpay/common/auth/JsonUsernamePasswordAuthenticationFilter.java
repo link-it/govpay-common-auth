@@ -203,12 +203,15 @@ public class JsonUsernamePasswordAuthenticationFilter extends AbstractAuthentica
                 URI.create(request.getRequestURI()));
     }
 
-    private static String clientIp(HttpServletRequest request) {
-        String forwarded = request.getHeader("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isBlank()) {
-            int comma = forwarded.indexOf(',');
-            return (comma < 0 ? forwarded : forwarded.substring(0, comma)).trim();
-        }
+    /**
+     * IP del chiamante per il rate limit. Non legge {@code X-Forwarded-For}:
+     * l'header e' impostabile dal client e permetterebbe di aggirare il limite
+     * cambiandolo a ogni tentativo. Dietro reverse proxy l'IP reale arriva in
+     * {@code getRemoteAddr()} configurando nel progetto
+     * {@code server.forward-headers-strategy}, che accetta l'header solo dai
+     * proxy fidati ({@code server.tomcat.remoteip.internal-proxies}).
+     */
+    static String clientIp(HttpServletRequest request) {
         return request.getRemoteAddr();
     }
 

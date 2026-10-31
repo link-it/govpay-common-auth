@@ -119,6 +119,25 @@
 
     <build>
         <plugins>
+            <!-- Il BOM fissa annotationProcessorPaths (lombok, mapstruct): i
+                 processor nel classpath vengono ignorati, quindi il
+                 configuration processor va aggiunto qui per generare
+                 META-INF/spring-configuration-metadata.json (completamento
+                 delle proprieta' govpay.auth.* negli IDE dei progetti). -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <annotationProcessorPaths combine.children="append">
+                        <path>
+                            <groupId>org.springframework.boot</groupId>
+                            <artifactId>spring-boot-configuration-processor</artifactId>
+                            <version>${spring-boot.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
+                </configuration>
+            </plugin>
+
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>

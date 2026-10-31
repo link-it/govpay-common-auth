@@ -1,6 +1,7 @@
 package it.govpay.common.auth;
 
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 
 import org.apache.commons.codec.digest.Md5Crypt;
 import org.apache.commons.codec.digest.Sha2Crypt;
@@ -60,7 +61,7 @@ public class GovpayPasswordEncoder implements PasswordEncoder {
 
     private static boolean matchesSha512(String rawPassword, String encodedPassword) {
         String recomputed = Sha2Crypt.sha512Crypt(rawPassword.getBytes(StandardCharsets.UTF_8), encodedPassword);
-        return recomputed.equals(encodedPassword);
+        return constantTimeEquals(recomputed, encodedPassword);
     }
 
     private static boolean matchesMd5(String rawPassword, String encodedPassword) {
@@ -69,6 +70,11 @@ public class GovpayPasswordEncoder implements PasswordEncoder {
         }
         String saltSpec = encodedPassword.substring(0, MD5_SALT_END_INDEX);
         String recomputed = Md5Crypt.md5Crypt(rawPassword.getBytes(StandardCharsets.UTF_8), saltSpec);
-        return recomputed.equals(encodedPassword);
+        return constantTimeEquals(recomputed, encodedPassword);
+    }
+
+    /** Confronto in tempo costante, per non rivelare con i tempi di risposta quanta parte dell'hash coincide. */
+    private static boolean constantTimeEquals(String a, String b) {
+        return MessageDigest.isEqual(a.getBytes(StandardCharsets.UTF_8), b.getBytes(StandardCharsets.UTF_8));
     }
 }
