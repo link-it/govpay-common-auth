@@ -229,7 +229,7 @@ Ogni metodo ha la proprietà `govpay.auth.<metodo>.enabled` (default `false`). L
 | `govpay.auth.ldap.user-search-base` | - | Base della ricerca utenti, es. `ou=people` |
 | `govpay.auth.ldap.group-search-base` | vuoto | Base della ricerca dei gruppi, es. `ou=groups` |
 | `govpay.auth.ldap.group-search-filter` | `(uniqueMember={0})` | Filtro di ricerca dei gruppi dell'utente |
-| `govpay.auth.ldap.password-attribute-name` | `userPassword` | Attributo password nella directory. Non usato: l'autenticazione avviene con il bind dell'utente |
+| `govpay.auth.ldap.password-attribute-name` | `userPassword` | **Deprecata dalla 1.0.2**, verrà rimossa nella prossima versione maggiore. Non usata: l'autenticazione avviene con il bind dell'utente |
 | `govpay.auth.ldap.role-prefix` | `ROLE_` | Prefisso dei ruoli ricavati dai gruppi LDAP e dal loader |
 | `govpay.auth.ldap.convert-to-upper-case` | `true` | Converte i ruoli in maiuscolo |
 
