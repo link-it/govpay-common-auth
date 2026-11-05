@@ -20,6 +20,7 @@ import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 
 import tools.jackson.databind.ObjectMapper;
@@ -123,6 +124,68 @@ class GovpaySecurityFilterChainRequestTest {
                     assertThat(response.getStatus()).isEqualTo(401);
                     assertThat(response.getContentType()).isEqualTo("application/problem+json");
                 });
+    }
+
+    @Test
+    void defaultEntryPointAnswersProblemJson() {
+        runner.withUserConfiguration(EnabledUserConfig.class)
+                .run(context -> {
+                    MockHttpServletResponse response =
+                            perform(context, new MockHttpServletRequest("GET", "/api/risorsa"));
+                    assertThat(response.getStatus()).isEqualTo(401);
+                    assertThat(response.getContentType()).isEqualTo("application/problem+json");
+                });
+    }
+
+    @Test
+    void customEntryPointIsUsedByTheChain() {
+        runner.withUserConfiguration(EnabledUserConfig.class, CustomEntryPointConfig.class)
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    MockHttpServletResponse response =
+                            perform(context, new MockHttpServletRequest("GET", "/api/risorsa"));
+                    assertThat(response.getStatus()).isEqualTo(CUSTOM_ENTRY_POINT_STATUS);
+                });
+    }
+
+    @Test
+    void customEntryPointIsUsedWithOauth2Enabled() {
+        runner.withUserConfiguration(EnabledUserConfig.class, CustomEntryPointConfig.class)
+                .withPropertyValues("govpay.auth.oauth2.enabled=true")
+                .run(context -> {
+                    assertThat(context).hasNotFailed();
+                    MockHttpServletResponse response =
+                            perform(context, new MockHttpServletRequest("GET", "/api/risorsa"));
+                    assertThat(response.getStatus()).isEqualTo(CUSTOM_ENTRY_POINT_STATUS);
+                });
+    }
+
+    @Test
+    void moreThanOneCustomEntryPointFailsWithClearMessage() {
+        runner.withUserConfiguration(EnabledUserConfig.class, CustomEntryPointConfig.class,
+                        SecondCustomEntryPointConfig.class)
+                .run(context -> assertThat(context).getFailure()
+                        .rootCause()
+                        .isInstanceOf(IllegalStateException.class)
+                        .hasMessageContaining("AuthenticationEntryPoint"));
+    }
+
+    private static final int CUSTOM_ENTRY_POINT_STATUS = 418;
+
+    @Configuration(proxyBeanMethods = false)
+    static class CustomEntryPointConfig {
+        @Bean
+        AuthenticationEntryPoint customEntryPoint() {
+            return (request, response, ex) -> response.setStatus(CUSTOM_ENTRY_POINT_STATUS);
+        }
+    }
+
+    @Configuration(proxyBeanMethods = false)
+    static class SecondCustomEntryPointConfig {
+        @Bean
+        AuthenticationEntryPoint secondCustomEntryPoint() {
+            return (request, response, ex) -> response.setStatus(CUSTOM_ENTRY_POINT_STATUS);
+        }
     }
 
     private static JwtDecoder fixedDecoder() {
