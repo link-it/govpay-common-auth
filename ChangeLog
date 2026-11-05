@@ -1,3 +1,29 @@
+2026-11-05  Giuliano Pintori <giuliano.pintori@link.it>
+
+	* [BugFix]
+	Un AuthenticationEntryPoint definito dal progetto impediva l'avvio:
+	il bean predefinito problemAuthenticationEntryPoint non veniva creato
+	ma la catena lo richiedeva per nome. Ora la catena usa l'unico entry
+	point disponibile (escluso quello Bearer di OAuth2) e fallisce con un
+	messaggio esplicito se ce n'e' piu' di uno (issue #10).
+
+	* [BugFix]
+	Con un context path il POST di login non era escluso dal controllo
+	CSRF e, con una sessione gia' aperta, veniva rifiutato (403, o 401
+	"Sessione Scaduta" senza token). L'esclusione usa ora lo stesso
+	matcher del filtro di login (issue #10).
+
+	* [Configurazione]
+	Deprecata govpay.auth.ldap.password-attribute-name, mai letta:
+	l'autenticazione LDAP avviene con il bind dell'utente. Verra' rimossa
+	nella prossima versione maggiore (issue #10).
+
+	* [Documentazione]
+	Limite noto: LoginRateLimiter conta i tentativi falliti in memoria su
+	ogni nodo; con N nodi il limite effettivo e' N volte
+	govpay.auth.form.rate-limit.attempts. Un contatore condiviso tra i
+	nodi non e' previsto in questa versione (issue #10).
+
 2026-07-24  Giuliano Pintori <giuliano.pintori@link.it>
 
 	* [Release]
