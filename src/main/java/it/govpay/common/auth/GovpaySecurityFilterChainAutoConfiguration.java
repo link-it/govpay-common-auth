@@ -297,7 +297,7 @@ public class GovpaySecurityFilterChainAutoConfiguration {
     @Order(50)
     public SecurityFilterChain govpaySecurityFilterChain(
             HttpSecurity http,
-            @Qualifier("problemAuthenticationEntryPoint") AuthenticationEntryPoint authenticationEntryPoint,
+            ObjectProvider<AuthenticationEntryPoint> entryPointProvider,
             AccessDeniedHandler accessDeniedHandler,
             AuthTypeStampingFilter authTypeStampingFilter,
             PrincipalCaptureFilter principalCaptureFilter,
@@ -324,6 +324,7 @@ public class GovpaySecurityFilterChainAutoConfiguration {
         boolean spidEnabled = properties.getSpid().isEnabled();
         // Sessione creata IF_REQUIRED solo per FORM e SPID.
         boolean sessionAware = formEnabled || spidEnabled;
+        AuthenticationEntryPoint authenticationEntryPoint = resolveEntryPoint(entryPointProvider);
 
         http.securityMatcher("/**")
                 .exceptionHandling(eh -> eh
@@ -367,6 +368,24 @@ public class GovpaySecurityFilterChainAutoConfiguration {
         http.addFilterAfter(principalCaptureFilter, AuthTypeStampingFilter.class);
 
         return http.build();
+    }
+
+    /**
+     * Sceglie l'entry point della catena: quello definito dal progetto, se c'e',
+     * altrimenti il {@code problemAuthenticationEntryPoint} di
+     * {@link GovpayAuthAutoConfiguration}. Si scarta il
+     * {@link BearerTokenProblemAuthenticationEntryPoint}, usato solo dal
+     * resource server OAuth2: ne deve restare esattamente uno.
+     */
+    static AuthenticationEntryPoint resolveEntryPoint(ObjectProvider<AuthenticationEntryPoint> entryPointProvider) {
+        List<AuthenticationEntryPoint> candidates = entryPointProvider.orderedStream()
+                .filter(ep -> !(ep instanceof BearerTokenProblemAuthenticationEntryPoint))
+                .toList();
+        if (candidates.size() != 1) {
+            throw new IllegalStateException("Atteso un solo AuthenticationEntryPoint per la catena GovPay "
+                    + "(escluso BearerTokenProblemAuthenticationEntryPoint), trovati " + candidates.size());
+        }
+        return candidates.get(0);
     }
 
     /**
@@ -462,9 +481,11 @@ public class GovpaySecurityFilterChainAutoConfiguration {
         CookieCsrfTokenRepository repo = CookieCsrfTokenRepository.withHttpOnlyFalse();
         repo.setCookieName(form.getCsrfCookieName());
         repo.setHeaderName(form.getCsrfHeaderName());
-        String loginPath = form.getLoginPath();
+        // Stesso matcher del filtro di login: confronta il percorso senza context path.
+        RequestMatcher loginMatcher = PathPatternRequestMatcher.withDefaults()
+                .matcher(HttpMethod.POST, form.getLoginPath());
         RequestMatcher ignore = request -> {
-            if ("POST".equalsIgnoreCase(request.getMethod()) && loginPath.equals(request.getRequestURI())) {
+            if (loginMatcher.matches(request)) {
                 return true;
             }
             if (request.getHeader("Authorization") != null) {

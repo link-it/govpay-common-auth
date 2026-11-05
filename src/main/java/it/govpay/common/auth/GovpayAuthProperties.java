@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.context.properties.DeprecatedConfigurationProperty;
 
 /**
  * Configurazione della libreria common-auth, prefisso {@code govpay.auth.*}.
@@ -424,7 +425,10 @@ public class GovpayAuthProperties {
         /** Filtro LDAP per la ricerca gruppi, default {@code (uniqueMember={0})}. */
         private String groupSearchFilter = "(uniqueMember={0})";
 
-        /** Nome dell'attributo password nel directory. Default {@code userPassword}. */
+        /**
+         * Nome dell'attributo password nel directory. Non usato: l'autenticazione
+         * LDAP avviene con il bind dell'utente.
+         */
         private String passwordAttributeName = "userPassword";
 
         /** Prefisso ruoli, default {@code ROLE_}. */
@@ -449,7 +453,15 @@ public class GovpayAuthProperties {
         public void setGroupSearchBase(String groupSearchBase) { this.groupSearchBase = groupSearchBase; }
         public String getGroupSearchFilter() { return groupSearchFilter; }
         public void setGroupSearchFilter(String groupSearchFilter) { this.groupSearchFilter = groupSearchFilter; }
+        /** @deprecated non letto dalla libreria: l'autenticazione LDAP avviene con il bind dell'utente. */
+        @Deprecated(since = "1.0.2", forRemoval = true)
+        @DeprecatedConfigurationProperty(
+                reason = "Non usata: l'autenticazione LDAP avviene con il bind dell'utente",
+                since = "1.0.2")
         public String getPasswordAttributeName() { return passwordAttributeName; }
+
+        /** @deprecated non letto dalla libreria: l'autenticazione LDAP avviene con il bind dell'utente. */
+        @Deprecated(since = "1.0.2", forRemoval = true)
         public void setPasswordAttributeName(String passwordAttributeName) { this.passwordAttributeName = passwordAttributeName; }
         public String getRolePrefix() { return rolePrefix; }
         public void setRolePrefix(String rolePrefix) { this.rolePrefix = rolePrefix; }
