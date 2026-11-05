@@ -6,6 +6,7 @@ import java.time.Instant;
 import java.util.List;
 
 import jakarta.servlet.Filter;
+import jakarta.servlet.http.Cookie;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
@@ -168,6 +169,72 @@ class GovpaySecurityFilterChainRequestTest {
                         .rootCause()
                         .isInstanceOf(IllegalStateException.class)
                         .hasMessageContaining("AuthenticationEntryPoint"));
+    }
+
+    /**
+     * {@code POST} con context path {@code /govpay}, una sessione HTTP gia'
+     * aperta (es. nuovo login senza logout) e il cookie CSRF, ma senza
+     * l'header CSRF: per una richiesta soggetta al controllo e' un token non
+     * valido (403).
+     */
+    private static MockHttpServletRequest postWithOpenSession(String path) {
+        return postWithOpenSession("/govpay", path);
+    }
+
+    private static MockHttpServletRequest postWithOpenSession(String contextPath, String path) {
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", contextPath + path);
+        request.setContextPath(contextPath);
+        request.setServletPath(path);
+        MockHttpSession session = new MockHttpSession();
+        request.setSession(session);
+        request.setRequestedSessionId(session.getId());
+        request.setRequestedSessionIdValid(true);
+        request.setCookies(new Cookie("XSRF-TOKEN", "token-csrf"));
+        request.setContentType("application/json");
+        request.setContent(("{\"username\":\"alice\",\"password\":\"" + LOGIN_PASSWORD + "\"}").getBytes());
+        return request;
+    }
+
+    @Test
+    void loginIsExcludedFromCsrfWithContextPath() {
+        runner.withUserConfiguration(LoginUserConfig.class)
+                .withPropertyValues("govpay.auth.form.enabled=true")
+                .run(context -> {
+                    MockHttpServletResponse response = perform(context, postWithOpenSession("/auth/login"));
+                    assertThat(response.getStatus()).isEqualTo(200);
+                });
+    }
+
+    @Test
+    void loginIsExcludedFromCsrfWithoutContextPath() {
+        runner.withUserConfiguration(LoginUserConfig.class)
+                .withPropertyValues("govpay.auth.form.enabled=true")
+                .run(context -> {
+                    MockHttpServletResponse response = perform(context, postWithOpenSession("", "/auth/login"));
+                    assertThat(response.getStatus()).isEqualTo(200);
+                });
+    }
+
+    @Test
+    void otherPostWithContextPathStillRequiresCsrf() {
+        runner.withUserConfiguration(LoginUserConfig.class)
+                .withPropertyValues("govpay.auth.form.enabled=true")
+                .run(context -> {
+                    MockHttpServletResponse response = perform(context, postWithOpenSession("/api/risorsa"));
+                    assertThat(response.getStatus()).isEqualTo(403);
+                });
+    }
+
+    private static final String LOGIN_PASSWORD = "segreta";
+
+    @Configuration(proxyBeanMethods = false)
+    @EnableWebSecurity
+    static class LoginUserConfig {
+        @Bean
+        GovpayPrincipalLoader loader() {
+            String hash = new GovpayPasswordEncoder(false).encode(LOGIN_PASSWORD);
+            return (principal, authType) -> new AuthenticatedSubject(principal, hash, true, List.of("OPERATORE"));
+        }
     }
 
     private static final int CUSTOM_ENTRY_POINT_STATUS = 418;

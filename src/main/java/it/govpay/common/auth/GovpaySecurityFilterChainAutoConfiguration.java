@@ -481,9 +481,11 @@ public class GovpaySecurityFilterChainAutoConfiguration {
         CookieCsrfTokenRepository repo = CookieCsrfTokenRepository.withHttpOnlyFalse();
         repo.setCookieName(form.getCsrfCookieName());
         repo.setHeaderName(form.getCsrfHeaderName());
-        String loginPath = form.getLoginPath();
+        // Stesso matcher del filtro di login: confronta il percorso senza context path.
+        RequestMatcher loginMatcher = PathPatternRequestMatcher.withDefaults()
+                .matcher(HttpMethod.POST, form.getLoginPath());
         RequestMatcher ignore = request -> {
-            if ("POST".equalsIgnoreCase(request.getMethod()) && loginPath.equals(request.getRequestURI())) {
+            if (loginMatcher.matches(request)) {
                 return true;
             }
             if (request.getHeader("Authorization") != null) {
