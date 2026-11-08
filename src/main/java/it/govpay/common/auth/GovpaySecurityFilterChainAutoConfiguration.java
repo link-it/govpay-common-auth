@@ -47,6 +47,7 @@ import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.servlet.util.matcher.PathPatternRequestMatcher;
 import org.springframework.security.web.util.matcher.OrRequestMatcher;
 import org.springframework.security.web.util.matcher.RequestMatcher;
+import org.springframework.security.web.savedrequest.NullRequestCache;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
@@ -329,7 +330,11 @@ public class GovpaySecurityFilterChainAutoConfiguration {
         http.securityMatcher("/**")
                 .exceptionHandling(eh -> eh
                         .authenticationEntryPoint(authenticationEntryPoint)
-                        .accessDeniedHandler(accessDeniedHandler));
+                        .accessDeniedHandler(accessDeniedHandler))
+                // API REST senza redirect post-login: la richiesta rifiutata non
+                // va salvata in sessione, altrimenti ogni 401 anonimo crea una
+                // sessione HTTP (issue #12).
+                .requestCache(rc -> rc.requestCache(new NullRequestCache()));
 
         corsConfigurationSourceProvider.ifAvailable(src -> {
             try {

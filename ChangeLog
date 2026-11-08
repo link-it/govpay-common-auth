@@ -1,3 +1,13 @@
+2026-11-08  Giuliano Pintori <giuliano.pintori@link.it>
+
+	* [BugFix]
+	Con FORM o SPID abilitati ogni richiesta anonima respinta con 401
+	creava una sessione HTTP e restituiva il cookie JSESSIONID: la request
+	cache salvava in sessione la richiesta rifiutata per il redirect dopo
+	il login, che le API REST non usano. La request cache e' ora
+	disabilitata (NullRequestCache); il login continua a creare la
+	sessione (issue #12).
+
 2026-11-05  Giuliano Pintori <giuliano.pintori@link.it>
 
 	* [BugFix]
