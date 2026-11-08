@@ -225,6 +225,38 @@ class GovpaySecurityFilterChainRequestTest {
                 });
     }
 
+    /**
+     * Issue #12: una richiesta anonima respinta con 401 non deve creare una
+     * sessione HTTP (la request cache non salva la richiesta).
+     */
+    @Test
+    void anonymousRejectedRequestDoesNotCreateSession() {
+        runner.withUserConfiguration(LoginUserConfig.class)
+                .withPropertyValues("govpay.auth.form.enabled=true")
+                .run(context -> {
+                    MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/risorsa");
+                    MockHttpServletResponse response = perform(context, request);
+                    assertThat(response.getStatus()).isEqualTo(401);
+                    assertThat(request.getSession(false)).isNull();
+                });
+    }
+
+    @Test
+    void formLoginStillCreatesSession() {
+        runner.withUserConfiguration(LoginUserConfig.class)
+                .withPropertyValues("govpay.auth.form.enabled=true")
+                .run(context -> {
+                    MockHttpServletRequest request = new MockHttpServletRequest("POST", "/auth/login");
+                    request.setServletPath("/auth/login");
+                    request.setContentType("application/json");
+                    request.setContent(("{\"username\":\"alice\",\"password\":\"" + LOGIN_PASSWORD + "\"}")
+                            .getBytes());
+                    MockHttpServletResponse response = perform(context, request);
+                    assertThat(response.getStatus()).isEqualTo(200);
+                    assertThat(request.getSession(false)).isNotNull();
+                });
+    }
+
     private static final String LOGIN_PASSWORD = "segreta";
 
     @Configuration(proxyBeanMethods = false)
